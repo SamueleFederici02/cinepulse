@@ -339,6 +339,39 @@ class TmdbClient {
     return [];
   }
 
+  // --- FILM DIRETTO DA UN REGISTA SPECIFICO ---
+  Future<List<TmdbMovie>> getMoviesByDirector(String directorName) async {
+    final cacheKey = 'director_films_${directorName.toLowerCase().replaceAll(' ', '_')}';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return (_memoryCache[cacheKey] as List).cast<TmdbMovie>();
+    }
+
+    try {
+      final res = await _dio.get(
+        '/search/person',
+        queryParameters: {'query': directorName},
+      );
+      final results = res.data['results'] as List?;
+      if (results != null && results.isNotEmpty) {
+        final personId = results.first['id'];
+        final creditsRes = await _dio.get('/person/$personId/movie_credits');
+        final crew = creditsRes.data['crew'] as List?;
+        if (crew != null) {
+          final directed = crew
+              .where((c) => c['job'] == 'Director')
+              .map((m) => TmdbMovie.fromJson(m))
+              .toList();
+          directed.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+          _memoryCache[cacheKey] = directed;
+          return directed;
+        }
+      }
+    } catch (e) {
+      debugPrint('Errore getMoviesByDirector per $directorName: $e');
+    }
+    return [];
+  }
+
   // --- CATALOGO PROVIDER STREAMING PER NAZIONE (ORDINATO ALFABETICAMENTE CON LOGHI) ---
   Future<List<Map<String, String>>> getWatchProvidersForCountry(String countryCode) async {
     final cacheKey = 'country_providers_${countryCode.toUpperCase()}';

@@ -344,6 +344,9 @@ class LetterboxdService {
       final yearIdx = header.indexOf('year');
       final ratingIdx = header.indexOf('rating');
       final uriIdx = header.indexOf('letterboxd uri');
+      final dateIdx = header.indexOf('watched date') != -1
+          ? header.indexOf('watched date')
+          : header.indexOf('date');
 
       if (nameIdx == -1) {
         debugPrint('Colonna "Name" non trovata nel CSV');
@@ -369,6 +372,14 @@ class LetterboxdService {
           rating = double.tryParse(row[ratingIdx].trim());
         }
 
+        DateTime? watchedDate;
+        if (dateIdx != -1 && row.length > dateIdx) {
+          final dateStr = row[dateIdx].trim();
+          if (dateStr.isNotEmpty) {
+            watchedDate = DateTime.tryParse(dateStr);
+          }
+        }
+
         String slug = '';
         if (uriIdx != -1 && row.length > uriIdx) {
           final uri = row[uriIdx].trim();
@@ -387,6 +398,7 @@ class LetterboxdService {
             year: year,
             rating: rating,
             isLiked: (rating != null && rating >= 4.5),
+            watchedDate: watchedDate,
           ),
         );
       }
@@ -441,15 +453,16 @@ class LetterboxdService {
         for (final m in diaryList) {
           if (!moviesMap.containsKey(m.slug)) {
             moviesMap[m.slug] = m;
-          } else if (m.rating != null && moviesMap[m.slug]!.rating == null) {
+          } else {
             final ex = moviesMap[m.slug]!;
             moviesMap[m.slug] = LetterboxdMovie(
               slug: ex.slug,
               title: ex.title,
               year: ex.year,
-              rating: m.rating,
+              rating: ex.rating ?? m.rating,
               isLiked: ex.isLiked || m.isLiked,
               isInWatchlist: ex.isInWatchlist,
+              watchedDate: m.watchedDate ?? ex.watchedDate,
               posterUrl: ex.posterUrl,
             );
           }
@@ -462,6 +475,18 @@ class LetterboxdService {
         for (final m in watchedList) {
           if (!moviesMap.containsKey(m.slug)) {
             moviesMap[m.slug] = m;
+          } else if (m.watchedDate != null && moviesMap[m.slug]!.watchedDate == null) {
+            final ex = moviesMap[m.slug]!;
+            moviesMap[m.slug] = LetterboxdMovie(
+              slug: ex.slug,
+              title: ex.title,
+              year: ex.year,
+              rating: ex.rating,
+              isLiked: ex.isLiked,
+              isInWatchlist: ex.isInWatchlist,
+              watchedDate: m.watchedDate,
+              posterUrl: ex.posterUrl,
+            );
           }
         }
       }
@@ -479,6 +504,7 @@ class LetterboxdService {
               rating: ex.rating,
               isLiked: true,
               isInWatchlist: ex.isInWatchlist,
+              watchedDate: ex.watchedDate ?? m.watchedDate,
               posterUrl: ex.posterUrl,
             );
           } else {
@@ -488,6 +514,7 @@ class LetterboxdService {
               year: m.year,
               rating: null,
               isLiked: true,
+              watchedDate: m.watchedDate,
             );
           }
         }
@@ -506,6 +533,7 @@ class LetterboxdService {
               rating: ex.rating,
               isLiked: ex.isLiked,
               isInWatchlist: true,
+              watchedDate: ex.watchedDate,
               posterUrl: ex.posterUrl,
             );
           } else {
@@ -515,6 +543,7 @@ class LetterboxdService {
               year: m.year,
               rating: null,
               isInWatchlist: true,
+              watchedDate: m.watchedDate,
             );
           }
         }
