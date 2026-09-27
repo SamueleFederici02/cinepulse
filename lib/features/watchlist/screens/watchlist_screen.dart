@@ -6,6 +6,7 @@ import '../../../core/models/letterboxd_movie.dart';
 import '../../../core/models/tmdb_movie.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/storage/local_storage.dart';
 import '../../movie_detail/screens/movie_detail_sheet.dart';
 
 enum WatchlistSortOrder {
@@ -157,12 +158,13 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
     for (final l in letterboxdWatchlist) {
       if (!cinepulseTitles.contains(l.title.toLowerCase().trim())) {
+        final cached = LocalStorageService.getCachedPoster(l.title);
         unifiedList.add(
           _WatchlistUnifiedItem(
             id: null,
             title: l.title,
             year: l.year?.toString(),
-            posterUrl: l.posterUrl,
+            posterUrl: (l.posterUrl != null && l.posterUrl!.isNotEmpty) ? l.posterUrl : cached,
             letterboxdMovie: l,
             isFromCinepulse: false,
             isFromLetterboxd: true,
@@ -614,6 +616,33 @@ class _WatchlistCard extends ConsumerStatefulWidget {
   ConsumerState<_WatchlistCard> createState() => _WatchlistCardState();
 }
 
+// Coda controllata per evitare sovraccarico di chiamate di rete simultanee a TMDb (max 4 in parallelo)
+class _PosterQueue {
+  static int _activeCount = 0;
+  static const int _maxConcurrent = 4;
+  static final List<void Function()> _queue = [];
+
+  static void enqueue(Future<void> Function() task) {
+    _queue.add(() async {
+      _activeCount++;
+      try {
+        await task();
+      } finally {
+        _activeCount--;
+        _processNext();
+      }
+    });
+    _processNext();
+  }
+
+  static void _processNext() {
+    if (_activeCount < _maxConcurrent && _queue.isNotEmpty) {
+      final next = _queue.removeAt(0);
+      next();
+    }
+  }
+}
+
 class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
   static final Map<String, String?> _posterCache = {};
   static final Map<String, TmdbMovie?> _movieCache = {};
@@ -643,25 +672,32 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
     if (widget.item.posterUrl != null && widget.item.posterUrl!.isNotEmpty) {
       return;
     }
-    if (_posterCache.containsKey(title)) {
+    // 1. Controlla prima la cache su disco permanente (Hive)
+    final cached = LocalStorageService.getCachedPoster(title);
+    if (cached != null && cached.isNotEmpty) {
+      _posterCache[title] = cached;
+      return;
+    }
+
+    if (_posterCache.containsKey(title) && _posterCache[title] != null) {
       return;
     }
     if (_isFetching) return;
 
     _isFetching = true;
-    Future.microtask(() async {
+    _PosterQueue.enqueue(() async {
       try {
         final tmdb = ref.read(tmdbClientProvider);
         final found = await tmdb.searchMovie(title, year: int.tryParse(widget.item.year ?? ''));
-        if (found != null) {
-          final full = await tmdb.getMovieDetails(found.id, countryCode: widget.countryCode) ?? found;
-          _posterCache[title] = full.posterUrl;
-          _movieCache[title] = full;
+        if (found != null && found.posterUrl.isNotEmpty) {
+          _posterCache[title] = found.posterUrl;
+          _movieCache[title] = found;
+          await LocalStorageService.setCachedPoster(title, found.posterUrl);
         } else {
           _posterCache[title] = null;
         }
       } catch (_) {
-        _posterCache[title] = null;
+        // Nessun errore permanente: riproverà in caso di temporanea assenza di connessione
       } finally {
         if (mounted) {
           setState(() {
@@ -712,6 +748,8 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                       CachedNetworkImage(
                         imageUrl: effectivePosterUrl,
                         fit: BoxFit.cover,
+                        memCacheWidth: 350,
+                        fadeInDuration: const Duration(milliseconds: 200),
                         placeholder: (_, __) => Container(
                           color: AppColors.surface,
                           child: const Center(

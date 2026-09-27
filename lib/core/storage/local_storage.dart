@@ -15,11 +15,13 @@ class LocalStorageService {
   static const String _boxTaste = 'taste_profile_box';
   static const String _boxDismissed = 'dismissed_movie_ids_box';
   static const String _boxFavorites = 'local_favorites_box';
+  static const String _boxPosters = 'movie_posters_box';
 
   static late Box _moviesBox;
   static late Box _tasteBox;
   static late Box _dismissedBox;
   static late Box _favoritesBox;
+  static late Box _posterBox;
   static late SharedPreferences _prefs;
 
   static Future<void> init() async {
@@ -28,6 +30,7 @@ class LocalStorageService {
     _tasteBox = await Hive.openBox(_boxTaste);
     _dismissedBox = await Hive.openBox(_boxDismissed);
     _favoritesBox = await Hive.openBox(_boxFavorites);
+    _posterBox = await Hive.openBox(_boxPosters);
     _prefs = await SharedPreferences.getInstance();
   }
 
@@ -156,5 +159,23 @@ class LocalStorageService {
       }
     }
     return list;
+  }
+
+  // --- PERSISTENT POSTER CACHE ---
+  static String? getCachedPoster(String title) {
+    try {
+      final key = title.toLowerCase().trim();
+      final val = _posterBox.get(key);
+      return val is String ? val : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setCachedPoster(String title, String posterUrl) async {
+    try {
+      final key = title.toLowerCase().trim();
+      await _posterBox.put(key, posterUrl);
+    } catch (_) {}
   }
 }
