@@ -30,6 +30,12 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         setState(() {
           _currentIndex = page;
         });
+
+        // Infinite scroll: quando mancano 3 film alla fine, carica la pagina successiva
+        final total = ref.read(recommendationsProvider).value?.length ?? 0;
+        if (_currentIndex >= total - 3 && total > 0) {
+          ref.read(recommendationsProvider.notifier).loadMoreRecommendations();
+        }
       }
     });
   }
@@ -51,7 +57,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
             movie: movie,
             countryCode: countryCode,
             onWatchlistToggle: () {
-              ref.read(recommendationsProvider.notifier).toggleFavorite(movie.id);
+              ref.read(recommendationsProvider.notifier).recordWatchlist(movie);
             },
             onMarkAsWatched: () {
               ref.read(recommendationsProvider.notifier).dismissMovie(movie.id);
@@ -72,10 +78,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   }
 
   void _handleSwipeLeft(TmdbMovie movie) {
-    ref.read(recommendationsProvider.notifier).dismissMovie(movie.id);
+    HapticFeedback.lightImpact();
+    ref.read(recommendationsProvider.notifier).recordDislike(movie);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Scartato "${movie.title}"'),
+        content: Text('👎 Scartato "${movie.title}" (preferenze aggiornate)'),
         duration: const Duration(seconds: 1),
         backgroundColor: AppColors.surfaceElevated,
       ),
@@ -83,14 +90,15 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   }
 
   void _handleSwipeRight(TmdbMovie movie) {
-    ref.read(recommendationsProvider.notifier).toggleFavorite(movie.id);
+    HapticFeedback.mediumImpact();
+    ref.read(recommendationsProvider.notifier).recordWatchlist(movie);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.bookmark_added, color: AppColors.primaryOrange, size: 18),
+            const Icon(Icons.bookmark_add_rounded, color: Color(0xFF00E676), size: 20),
             const SizedBox(width: 8),
-            Expanded(child: Text('"${movie.title}" aggiunto alla Watchlist!')),
+            Expanded(child: Text('"${movie.title}" aggiunto alla tua Watchlist!')),
           ],
         ),
         duration: const Duration(seconds: 2),

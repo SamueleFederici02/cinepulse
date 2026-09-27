@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../catalog/screens/catalog_screen.dart';
 import '../../discovery/screens/discovery_screen.dart';
-import '../../now_playing/screens/now_playing_screen.dart';
 import '../../taste_profile/screens/taste_profile_screen.dart';
-import '../../top_rated/screens/top_rated_screen.dart';
+import '../../watchlist/screens/watchlist_screen.dart';
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
@@ -19,8 +19,8 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   final List<Widget> _screens = const [
     DiscoveryScreen(),
-    NowPlayingScreen(),
-    TopRatedScreen(),
+    CatalogScreen(),
+    WatchlistScreen(),
     TasteProfileScreen(),
   ];
 
@@ -81,14 +81,14 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
                         onTap: () => _onTabSelected(0),
                       ),
                       _NavBarItem(
-                        icon: Icons.local_fire_department_rounded,
-                        label: 'Nuovi',
+                        icon: Icons.movie_filter_rounded,
+                        label: 'Liste',
                         isSelected: currentTab == 1,
                         onTap: () => _onTabSelected(1),
                       ),
                       _NavBarItem(
-                        icon: Icons.workspace_premium_rounded,
-                        label: 'Top 250',
+                        icon: Icons.bookmark_added_rounded,
+                        label: 'Watchlist',
                         isSelected: currentTab == 2,
                         onTap: () => _onTabSelected(2),
                       ),

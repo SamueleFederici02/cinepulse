@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/letterboxd_movie.dart';
 import '../models/taste_profile.dart';
+import '../models/tmdb_movie.dart';
 
 class LocalStorageService {
   static const String _prefsKeyUsername = 'active_letterboxd_username';
@@ -119,12 +120,37 @@ class LocalStorageService {
     return _favoritesBox.containsKey(tmdbId.toString());
   }
 
-  static Future<void> toggleFavoriteMovie(int tmdbId) async {
+  static Future<void> toggleFavoriteMovie(int tmdbId, [TmdbMovie? movie]) async {
     final key = tmdbId.toString();
     if (_favoritesBox.containsKey(key)) {
       await _favoritesBox.delete(key);
     } else {
-      await _favoritesBox.put(key, true);
+      if (movie != null) {
+        await _favoritesBox.put(key, jsonEncode(movie.toJson()));
+      } else {
+        await _favoritesBox.put(key, true);
+      }
     }
+  }
+
+  static Future<void> saveWatchlistMovie(TmdbMovie movie) async {
+    final key = movie.id.toString();
+    await _favoritesBox.put(key, jsonEncode(movie.toJson()));
+  }
+
+  static Future<void> removeWatchlistMovie(int tmdbId) async {
+    await _favoritesBox.delete(tmdbId.toString());
+  }
+
+  static List<TmdbMovie> getLocalWatchlistMovies() {
+    final List<TmdbMovie> list = [];
+    for (final val in _favoritesBox.values) {
+      if (val is String && val.startsWith('{')) {
+        try {
+          list.add(TmdbMovie.fromJson(jsonDecode(val)));
+        } catch (_) {}
+      }
+    }
+    return list;
   }
 }

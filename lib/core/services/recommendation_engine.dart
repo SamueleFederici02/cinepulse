@@ -503,6 +503,160 @@ class RecommendationEngine {
     return diverseFeed.isNotEmpty ? diverseFeed : scoredList.take(maxResults).toList();
   }
 
+  /// Genera raccomandazioni successive per lo scroll infinito con apprendimento real-time
+  Future<List<TmdbMovie>> generateNextPageRecommendations({
+    required List<LetterboxdMovie> userMovies,
+    required TasteProfile tasteProfile,
+    required String countryCode,
+    required int page,
+    required Set<int> alreadyRecommendedIds,
+    Map<int, double> realtimeGenreBoost = const {},
+    Map<int, double> realtimeGenrePenalty = const {},
+    List<String> requiredProviders = const [],
+    int maxResults = 18,
+  }) async {
+    final Set<String> watchedTitles = userMovies
+        .where((m) => !m.isInWatchlist)
+        .map((m) => _normalizeTitle(m.title))
+        .toSet();
+
+    final Map<int, TmdbMovie> candidates = {};
+    final Map<int, String> candidateReasons = {};
+
+    // 1. Discover TMDb sulla pagina successiva per i generi preferiti o boosted
+    final sortedGenres = tasteProfile.genrePercentages.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Se un genere è stato boostato in tempo reale (per swipe right), lo includiamo
+    List<int> targetGenres = [];
+    realtimeGenreBoost.forEach((gId, boost) {
+      if (boost > 0 && !targetGenres.contains(gId)) {
+        targetGenres.add(gId);
+      }
+    });
+
+    for (final entry in sortedGenres.take(3)) {
+      final gId = AppConfig.getGenreIdByName(entry.key);
+      if (gId != null && !targetGenres.contains(gId)) {
+        targetGenres.add(gId);
+      }
+    }
+
+    for (final gId in targetGenres.take(3)) {
+      if ((realtimeGenrePenalty[gId] ?? 0.0) >= 3.0) continue;
+
+      try {
+        final discovered = await _tmdbClient.discoverMovies(
+          withGenres: [gId],
+          minVote: 6.9,
+          minVoteCount: 150,
+          page: page,
+        );
+        for (final m in discovered) {
+          if (!alreadyRecommendedIds.contains(m.id) &&
+              !_isMovieExcluded(m, watchedTitles) &&
+              !candidates.containsKey(m.id)) {
+            candidates[m.id] = m;
+            final gName = AppConfig.genreMap[gId] ?? 'Cinema';
+            candidateReasons[m.id] = (realtimeGenreBoost[gId] ?? 0) > 0
+                ? '✦ Basato sui tuoi recenti film aggiunti in Watchlist ($gName)'
+                : '✦ Dal catalogo d\'eccellenza per $gName';
+            if (candidates.length >= 25) break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (candidates.length < 10) {
+      try {
+        final pop = await _tmdbClient.getPopularMovies(page: page);
+        for (final m in pop) {
+          if (!alreadyRecommendedIds.contains(m.id) &&
+              !_isMovieExcluded(m, watchedTitles) &&
+              !candidates.containsKey(m.id)) {
+            candidates[m.id] = m;
+            candidateReasons[m.id] = '✦ Tra i film più visti e popolari';
+          }
+        }
+      } catch (_) {}
+    }
+
+    final candidateList = candidates.values.toList();
+    final List<TmdbMovie> detailed = [];
+    const int bSize = 6;
+    for (int i = 0; i < candidateList.length; i += bSize) {
+      final b = candidateList.sublist(i, min(i + bSize, candidateList.length));
+      final res = await Future.wait(
+        b.map((c) async {
+          try {
+            return await _tmdbClient.getMovieDetails(c.id, countryCode: countryCode) ?? c;
+          } catch (_) {
+            return c;
+          }
+        }),
+      );
+      detailed.addAll(res);
+      await Future.delayed(const Duration(milliseconds: 25));
+    }
+
+    final List<TmdbMovie> scored = [];
+    for (final full in detailed) {
+      final availableFlatrate = full
+          .flatrateProviders(countryCode)
+          .map((p) => p.providerName.toLowerCase())
+          .toList();
+
+      if (requiredProviders.isNotEmpty) {
+        final hasMatch = requiredProviders.any((req) =>
+            availableFlatrate.any((avail) => avail.contains(req.toLowerCase())));
+        if (!hasMatch) continue;
+      }
+
+      double score = 0.0;
+      final List<String> reasons = [];
+      if (candidateReasons.containsKey(full.id)) {
+        reasons.add(candidateReasons[full.id]!);
+      }
+
+      for (final gId in full.genreIds) {
+        final gName = AppConfig.genreMap[gId];
+        if (gName != null && tasteProfile.genrePercentages.containsKey(gName)) {
+          score += (tasteProfile.genrePercentages[gName]! * 0.35);
+        }
+        if (realtimeGenreBoost.containsKey(gId)) {
+          score += realtimeGenreBoost[gId]! * 3.0;
+        }
+        if (realtimeGenrePenalty.containsKey(gId)) {
+          score -= realtimeGenrePenalty[gId]! * 4.0;
+        }
+      }
+
+      if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
+        score += 15.0;
+        reasons.add('✦ Diretto da ${full.director}');
+      }
+
+      score += (full.voteAverage / 10.0) * 12.0;
+
+      if (availableFlatrate.isNotEmpty) {
+        score += 8.0;
+        final names = full.flatrateProviders(countryCode).take(2).map((p) => p.providerName).join(', ');
+        reasons.add('✦ Disponibile in streaming su $names');
+      }
+
+      final finalScore = min(99.0, max(73.0, score));
+      scored.add(
+        full.copyWith(
+          matchScore: double.parse(finalScore.toStringAsFixed(1)),
+          matchReasons: reasons.toSet().toList(),
+        ),
+      );
+    }
+
+    scored.sort((a, b) => b.matchScore.compareTo(a.matchScore));
+    return scored.take(maxResults).toList();
+  }
+
   /// Restituisce film popolari e acclamati come fallback se l'utente non ha ancora importato nulla
   Future<List<TmdbMovie>> getTrendingFallbackMovies({
     String countryCode = 'IT',

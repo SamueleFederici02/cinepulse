@@ -158,22 +158,67 @@ class TmdbMovie {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'original_title': originalTitle,
+      'overview': overview,
+      'poster_path': posterPath,
+      'backdrop_path': backdropPath,
+      'release_date': releaseDate,
+      'vote_average': voteAverage,
+      'vote_count': voteCount,
+      'genre_ids': genreIds,
+      'genres': genres,
+      'runtime': runtimeMinutes,
+      'director': director,
+      'cast': cast,
+      'trailerKey': trailerKey,
+      'watchProviders': watchProviders?.map(
+        (k, v) => MapEntry(k, v.map((p) => p.toJson()).toList()),
+      ),
+      'matchScore': matchScore,
+      'matchReasons': matchReasons,
+      'isInUserWatchlist': isInUserWatchlist,
+      'rottenTomatoesScore': rottenTomatoesScore,
+      'letterboxdScore': letterboxdScore,
+      'imdbScore': imdbScore,
+      'metacriticScore': metacriticScore,
+    };
+  }
+
   factory TmdbMovie.fromJson(Map<String, dynamic> json) {
     List<int> gIds = [];
     if (json['genre_ids'] != null) {
       gIds = (json['genre_ids'] as List).map((e) => (e as num).toInt()).toList();
-    } else if (json['genres'] != null) {
+    } else if (json['genres'] != null && json['genres'] is List && (json['genres'] as List).isNotEmpty && json['genres'][0] is Map) {
       gIds = (json['genres'] as List)
           .map((e) => (e['id'] as num).toInt())
           .toList();
     }
 
     List<String> gNames = [];
-    if (json['genres'] != null) {
-      gNames = (json['genres'] as List)
-          .map((e) => e['name']?.toString() ?? '')
-          .where((e) => e.isNotEmpty)
-          .toList();
+    if (json['genres'] != null && json['genres'] is List) {
+      for (final g in json['genres'] as List) {
+        if (g is String) {
+          gNames.add(g);
+        } else if (g is Map && g['name'] != null) {
+          gNames.add(g['name'].toString());
+        }
+      }
+    }
+
+    Map<String, List<WatchProvider>>? providers;
+    if (json['watchProviders'] != null && json['watchProviders'] is Map) {
+      providers = {};
+      (json['watchProviders'] as Map).forEach((k, v) {
+        if (v is List) {
+          providers![k.toString()] = v
+              .map((item) => WatchProvider.fromJson(item as Map<String, dynamic>))
+              .toList();
+        }
+      });
     }
 
     return TmdbMovie(
@@ -189,6 +234,17 @@ class TmdbMovie {
       genreIds: gIds,
       genres: gNames,
       runtimeMinutes: (json['runtime'] as num?)?.toInt(),
+      director: json['director']?.toString(),
+      cast: json['cast'] != null ? List<String>.from(json['cast'] as List) : const [],
+      trailerKey: json['trailerKey']?.toString(),
+      watchProviders: providers ?? const {},
+      matchScore: (json['matchScore'] as num?)?.toDouble() ?? 0.0,
+      matchReasons: json['matchReasons'] != null ? List<String>.from(json['matchReasons'] as List) : const [],
+      isInUserWatchlist: (json['isInUserWatchlist'] as bool?) ?? false,
+      rottenTomatoesScore: json['rottenTomatoesScore']?.toString(),
+      letterboxdScore: json['letterboxdScore']?.toString(),
+      imdbScore: json['imdbScore']?.toString(),
+      metacriticScore: json['metacriticScore']?.toString(),
     );
   }
 }
