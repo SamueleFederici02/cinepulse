@@ -22,6 +22,16 @@ class LetterboxdService {
     ),
   );
 
+  static String? _cleanPosterUrl(String? url) {
+    if (url == null) return null;
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.contains('empty-poster') || trimmed.startsWith('data:image')) {
+      return null;
+    }
+    return trimmed;
+  }
+
   /// Fetch rapido del feed RSS per estrarre gli ultimi film visti/recensiti
   Future<List<LetterboxdMovie>> fetchRecentWatchedRss(String username) async {
     return _fetchRssFeed(username.trim().toLowerCase());
@@ -55,8 +65,17 @@ class LetterboxdService {
     try {
       final page1Movies = await _fetchPublicFilmsPage(cleanUsername, page: 1);
       for (final m in page1Movies) {
+        final cleanPoster = _cleanPosterUrl(m.posterUrl);
         if (!moviesMap.containsKey(m.slug)) {
-          moviesMap[m.slug] = m;
+          moviesMap[m.slug] = LetterboxdMovie(
+            slug: m.slug,
+            title: m.title,
+            year: m.year,
+            rating: m.rating,
+            isLiked: m.isLiked,
+            isInWatchlist: m.isInWatchlist,
+            posterUrl: cleanPoster,
+          );
         } else if (m.rating != null && moviesMap[m.slug]!.rating == null) {
           final ex = moviesMap[m.slug]!;
           moviesMap[m.slug] = LetterboxdMovie(
@@ -66,7 +85,7 @@ class LetterboxdService {
             rating: m.rating,
             isLiked: ex.isLiked,
             isInWatchlist: ex.isInWatchlist,
-            posterUrl: ex.posterUrl ?? m.posterUrl,
+            posterUrl: _cleanPosterUrl(ex.posterUrl) ?? cleanPoster,
           );
         }
       }
@@ -81,8 +100,17 @@ class LetterboxdService {
         'https://letterboxd.com/$cleanUsername/films/by/member-rating/',
       );
       for (final m in ratedMovies) {
+        final cleanPoster = _cleanPosterUrl(m.posterUrl);
         if (!moviesMap.containsKey(m.slug)) {
-          moviesMap[m.slug] = m;
+          moviesMap[m.slug] = LetterboxdMovie(
+            slug: m.slug,
+            title: m.title,
+            year: m.year,
+            rating: m.rating,
+            isLiked: m.isLiked,
+            isInWatchlist: m.isInWatchlist,
+            posterUrl: cleanPoster,
+          );
         } else if (m.rating != null) {
           final ex = moviesMap[m.slug]!;
           moviesMap[m.slug] = LetterboxdMovie(
@@ -92,7 +120,7 @@ class LetterboxdService {
             rating: m.rating,
             isLiked: ex.isLiked,
             isInWatchlist: ex.isInWatchlist,
-            posterUrl: ex.posterUrl ?? m.posterUrl,
+            posterUrl: _cleanPosterUrl(ex.posterUrl) ?? cleanPoster,
           );
         }
       }
@@ -107,6 +135,7 @@ class LetterboxdService {
         'https://letterboxd.com/$cleanUsername/films/liked/',
       );
       for (final m in likedMovies) {
+        final cleanPoster = _cleanPosterUrl(m.posterUrl);
         if (!moviesMap.containsKey(m.slug)) {
           moviesMap[m.slug] = LetterboxdMovie(
             slug: m.slug,
@@ -115,7 +144,7 @@ class LetterboxdService {
             rating: m.rating,
             isLiked: true,
             isInWatchlist: m.isInWatchlist,
-            posterUrl: m.posterUrl,
+            posterUrl: cleanPoster,
           );
         } else {
           final ex = moviesMap[m.slug]!;
@@ -126,7 +155,7 @@ class LetterboxdService {
             rating: ex.rating,
             isLiked: true,
             isInWatchlist: ex.isInWatchlist,
-            posterUrl: ex.posterUrl,
+            posterUrl: _cleanPosterUrl(ex.posterUrl) ?? cleanPoster,
           );
         }
       }
@@ -139,6 +168,7 @@ class LetterboxdService {
     try {
       final watchlist = await _fetchWatchlist(cleanUsername);
       for (final m in watchlist) {
+        final cleanPoster = _cleanPosterUrl(m.posterUrl);
         if (moviesMap.containsKey(m.slug)) {
           final ex = moviesMap[m.slug]!;
           moviesMap[m.slug] = LetterboxdMovie(
@@ -148,10 +178,18 @@ class LetterboxdService {
             rating: ex.rating,
             isLiked: ex.isLiked,
             isInWatchlist: true,
-            posterUrl: ex.posterUrl,
+            posterUrl: _cleanPosterUrl(ex.posterUrl) ?? cleanPoster,
           );
         } else {
-          moviesMap[m.slug] = m;
+          moviesMap[m.slug] = LetterboxdMovie(
+            slug: m.slug,
+            title: m.title,
+            year: m.year,
+            rating: m.rating,
+            isLiked: m.isLiked,
+            isInWatchlist: true,
+            posterUrl: cleanPoster,
+          );
         }
       }
       onProgress?.call(moviesMap.length);
@@ -216,7 +254,7 @@ class LetterboxdService {
       String? posterUrl;
       final imgMatch = RegExp(r'src="([^"]+)"').firstMatch(description);
       if (imgMatch != null) {
-        posterUrl = imgMatch.group(1);
+        posterUrl = _cleanPosterUrl(imgMatch.group(1));
       }
 
       results.add(
@@ -294,7 +332,8 @@ class LetterboxdService {
               : el.querySelector('.film-poster');
           final slug = posterDiv?.attributes['data-film-slug'] ?? '';
           final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
-          final posterUrl = img?.attributes['src'];
+          final rawPosterUrl = img?.attributes['src'] ?? img?.attributes['data-src'] ?? img?.attributes['data-original'];
+          final posterUrl = _cleanPosterUrl(rawPosterUrl);
 
           int? year;
           final yearAttr = posterDiv?.attributes['data-film-release-year'] ??
@@ -356,7 +395,8 @@ class LetterboxdService {
 
       final img = el.querySelector('img');
       final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
-      final posterUrl = img?.attributes['src'];
+      final rawPosterUrl = img?.attributes['src'] ?? img?.attributes['data-src'] ?? img?.attributes['data-original'];
+      final posterUrl = _cleanPosterUrl(rawPosterUrl);
 
       int? year;
       final yearAttr = posterDiv?.attributes['data-film-release-year'] ??

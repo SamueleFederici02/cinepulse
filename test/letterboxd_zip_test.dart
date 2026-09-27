@@ -32,7 +32,7 @@ void main() {
     final zipBytes = ZipEncoder().encode(archive);
     expect(zipBytes, isNotNull);
 
-    final movies = service.parseLetterboxdZip(zipBytes!);
+    final movies = service.parseLetterboxdZip(zipBytes);
 
     // Dovrebbero esserci: Dune 2 (voto 5.0), Oppenheimer (voto 4.5), Interstellar (voto 4.0), The Batman (senza voto), Gladiator II (in watchlist)
     expect(movies.length, equals(5));

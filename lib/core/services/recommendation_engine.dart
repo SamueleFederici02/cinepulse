@@ -186,8 +186,8 @@ class RecommendationEngine {
             );
             final finalWeight = baseMultiplier * recency;
 
-            var tmdbInfo = await _tmdbClient.searchMovie(movie.title, year: movie.year);
-            tmdbInfo ??= await _tmdbClient.searchMovie(movie.title);
+            var tmdbInfo = await _tmdbClient.searchMovie(movie.title, year: movie.year, slug: movie.slug);
+            tmdbInfo ??= await _tmdbClient.searchMovie(movie.title, slug: movie.slug);
 
             if (tmdbInfo != null) {
               // Estrazione generi
@@ -319,7 +319,7 @@ class RecommendationEngine {
     // Per ciascun film seme estraiamo AL MASSIMO 3 raccomandazioni (evita che 1 solo film inondi i consigli)
     for (final seed in diverseSeeds) {
       try {
-        final searchResult = await _tmdbClient.searchMovie(seed.title, year: seed.year);
+        final searchResult = await _tmdbClient.searchMovie(seed.title, year: seed.year, slug: seed.slug);
         if (searchResult != null) {
           final recs = await _tmdbClient.getRecommendations(searchResult.id);
           int addedFromThisSeed = 0;

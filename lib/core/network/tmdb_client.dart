@@ -32,30 +32,73 @@ class TmdbClient {
     );
   }
 
-  // --- RICERCA FILM CON MATCHING ACCURATO ---
-  Future<TmdbMovie?> searchMovie(String title, {int? year}) async {
-    final cacheKey = 'search_${title.toLowerCase()}_$year';
+  // --- RICERCA FILM CON MATCHING ACCURATO E FALLBACK BILINGUE/SLUG ---
+  Future<TmdbMovie?> searchMovie(String title, {int? year, String? slug}) async {
+    final cacheKey = 'search_${title.toLowerCase()}_${year}_${slug ?? ''}';
     if (_memoryCache.containsKey(cacheKey)) {
       return _memoryCache[cacheKey] as TmdbMovie?;
     }
 
     try {
-      final response = await _dio.get(
-        '/search/movie',
-        queryParameters: {
-          'query': title,
-          if (year != null) 'year': year,
-          'include_adult': false,
-        },
-      );
+      final minConfidenceScore = year != null ? 700.0 : 500.0;
 
-      final results = response.data['results'] as List?;
-      if (results != null && results.isNotEmpty) {
-        final movie = _pickBestMatch(results, title, year);
-        if (movie != null) {
-          _memoryCache[cacheKey] = movie;
-          return movie;
+      // 1. Ricerca primaria in italiano (it-IT)
+      _ScoredMatch? bestMatch = await _searchSingle(title, year: year, language: 'it-IT');
+
+      // Se il match è già eccellente con titolo esatto
+      if (bestMatch != null && bestMatch.score >= minConfidenceScore) {
+        _memoryCache[cacheKey] = bestMatch.movie;
+        return bestMatch.movie;
+      }
+
+      // 2. Se abbiamo uno slug (da Letterboxd) e differisce dal titolo, cercalo
+      if (slug != null && slug.isNotEmpty) {
+        final cleanSlug = slug.replaceAll(RegExp(r'-\d{4}$'), '').replaceAll('-', ' ').trim();
+        if (cleanSlug.isNotEmpty && cleanSlug.toLowerCase() != title.trim().toLowerCase()) {
+          final slugMatch = await _searchSingle(cleanSlug, year: year, language: 'it-IT');
+          if (slugMatch != null) {
+            if (bestMatch == null || slugMatch.score > bestMatch.score) {
+              bestMatch = slugMatch;
+            }
+          }
         }
+      }
+
+      if (bestMatch != null && bestMatch.score >= minConfidenceScore) {
+        _memoryCache[cacheKey] = bestMatch.movie;
+        return bestMatch.movie;
+      }
+
+      // 3. Fallback bilingue: ricerca in lingua en-US
+      // (fondamentale per film italiani tradotti o film internazionali salvati col titolo inglese)
+      final enMatch = await _searchSingle(title, year: year, language: 'en-US');
+      if (enMatch != null) {
+        if (bestMatch == null || enMatch.score > bestMatch.score) {
+          bestMatch = enMatch;
+        }
+      }
+
+      if (bestMatch != null && bestMatch.score >= minConfidenceScore) {
+        _memoryCache[cacheKey] = bestMatch.movie;
+        return bestMatch.movie;
+      }
+
+      // 4. Se è stato specificato l'anno ma la ricerca è troppo restrittiva, prova senza anno
+      if (year != null && (bestMatch == null || bestMatch.score < 200.0)) {
+        final broadIt = await _searchSingle(title, year: null, language: 'it-IT');
+        if (broadIt != null && (bestMatch == null || broadIt.score > bestMatch.score)) {
+          bestMatch = broadIt;
+        }
+
+        final broadEn = await _searchSingle(title, year: null, language: 'en-US');
+        if (broadEn != null && (bestMatch == null || broadEn.score > bestMatch.score)) {
+          bestMatch = broadEn;
+        }
+      }
+
+      if (bestMatch != null) {
+        _memoryCache[cacheKey] = bestMatch.movie;
+        return bestMatch.movie;
       }
     } catch (e) {
       debugPrint('Errore nella ricerca TMDb per "$title": $e');
@@ -63,8 +106,41 @@ class TmdbClient {
     return null;
   }
 
+  Future<_ScoredMatch?> _searchSingle(
+    String query, {
+    int? year,
+    String language = 'it-IT',
+  }) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return null;
+
+    try {
+      final response = await _dio.get(
+        '/search/movie',
+        queryParameters: {
+          'query': clean,
+          if (year != null) 'year': year,
+          'language': language,
+          'include_adult': false,
+        },
+      );
+
+      final results = response.data['results'] as List?;
+      if (results != null && results.isNotEmpty) {
+        return _pickBestMatchWithScore(results, clean, year);
+      }
+    } catch (e) {
+      debugPrint('Errore _searchSingle TMDb ($query, $language): $e');
+    }
+    return null;
+  }
+
   // --- SELEZIONE INTELLIGENTE DEL MIGLIOR RISULTATO ---
   TmdbMovie? _pickBestMatch(List<dynamic> results, String queryTitle, int? targetYear) {
+    return _pickBestMatchWithScore(results, queryTitle, targetYear)?.movie;
+  }
+
+  _ScoredMatch? _pickBestMatchWithScore(List<dynamic> results, String queryTitle, int? targetYear) {
     if (results.isEmpty) return null;
 
     final cleanQuery = queryTitle.trim().toLowerCase();
@@ -137,9 +213,9 @@ class TmdbClient {
     }
 
     if (bestResult != null) {
-      return TmdbMovie.fromJson(bestResult as Map<String, dynamic>);
+      return _ScoredMatch(TmdbMovie.fromJson(bestResult as Map<String, dynamic>), bestScore);
     }
-    return TmdbMovie.fromJson(results.first as Map<String, dynamic>);
+    return _ScoredMatch(TmdbMovie.fromJson(results.first as Map<String, dynamic>), 0.0);
   }
 
   // --- DETTAGLI COMPLETI + CREDITS + VIDEOS + EXTERNAL IDS + ROTTEN TOMATOES ---
@@ -596,3 +672,11 @@ class TmdbClient {
     return [];
   }
 }
+
+class _ScoredMatch {
+  final TmdbMovie movie;
+  final double score;
+
+  const _ScoredMatch(this.movie, this.score);
+}
+

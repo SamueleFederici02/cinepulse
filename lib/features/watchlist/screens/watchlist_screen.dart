@@ -159,12 +159,25 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     for (final l in letterboxdWatchlist) {
       if (!cinepulseTitles.contains(l.title.toLowerCase().trim())) {
         final cached = LocalStorageService.getCachedPoster(l.title);
+        final rawLPoster = l.posterUrl;
+        final validLPoster = (rawLPoster != null &&
+                rawLPoster.isNotEmpty &&
+                !rawLPoster.contains('empty-poster') &&
+                !rawLPoster.startsWith('data:image'))
+            ? rawLPoster
+            : null;
+        final validCached = (cached != null &&
+                cached.isNotEmpty &&
+                !cached.contains('empty-poster') &&
+                !cached.startsWith('data:image'))
+            ? cached
+            : null;
         unifiedList.add(
           _WatchlistUnifiedItem(
             id: null,
             title: l.title,
             year: l.year?.toString(),
-            posterUrl: (l.posterUrl != null && l.posterUrl!.isNotEmpty) ? l.posterUrl : cached,
+            posterUrl: validLPoster ?? validCached,
             letterboxdMovie: l,
             isFromCinepulse: false,
             isFromLetterboxd: true,
@@ -473,7 +486,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                                 }
                                 // Cerca il film su TMDb e apri i dettagli
                                 final tmdb = ref.read(tmdbClientProvider);
-                                final res = await tmdb.searchMovie(item.title, year: int.tryParse(item.year ?? ''));
+                                final res = await tmdb.searchMovie(
+                                  item.title,
+                                  year: int.tryParse(item.year ?? ''),
+                                  slug: item.letterboxdMovie?.slug,
+                                );
                                 if (res != null && context.mounted) {
                                   final full = await tmdb.getMovieDetails(res.id, countryCode: countryCode) ?? res;
                                   if (context.mounted) _openDetail(full, countryCode);
@@ -669,12 +686,20 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
 
   void _fetchDetailsIfNeeded() {
     final title = widget.item.title;
-    if (widget.item.posterUrl != null && widget.item.posterUrl!.isNotEmpty) {
+    final rawPoster = widget.item.posterUrl;
+    final hasValidPoster = rawPoster != null &&
+        rawPoster.isNotEmpty &&
+        !rawPoster.contains('empty-poster') &&
+        !rawPoster.startsWith('data:image');
+    if (hasValidPoster) {
       return;
     }
     // 1. Controlla prima la cache su disco permanente (Hive)
     final cached = LocalStorageService.getCachedPoster(title);
-    if (cached != null && cached.isNotEmpty) {
+    if (cached != null &&
+        cached.isNotEmpty &&
+        !cached.contains('empty-poster') &&
+        !cached.startsWith('data:image')) {
       _posterCache[title] = cached;
       return;
     }
@@ -688,7 +713,11 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
     _PosterQueue.enqueue(() async {
       try {
         final tmdb = ref.read(tmdbClientProvider);
-        final found = await tmdb.searchMovie(title, year: int.tryParse(widget.item.year ?? ''));
+        final found = await tmdb.searchMovie(
+          title,
+          year: int.tryParse(widget.item.year ?? ''),
+          slug: widget.item.letterboxdMovie?.slug,
+        );
         if (found != null && found.posterUrl.isNotEmpty) {
           _posterCache[title] = found.posterUrl;
           _movieCache[title] = found;
@@ -713,9 +742,14 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
     final item = widget.item;
     final cachedMovie = _movieCache[item.title];
     final effectiveMovie = item.tmdbMovie ?? cachedMovie;
-    final effectivePosterUrl = (item.posterUrl != null && item.posterUrl!.isNotEmpty)
-        ? item.posterUrl
-        : _posterCache[item.title];
+    final rawPoster = item.posterUrl;
+    final validItemPoster = (rawPoster != null &&
+            rawPoster.isNotEmpty &&
+            !rawPoster.contains('empty-poster') &&
+            !rawPoster.startsWith('data:image'))
+        ? rawPoster
+        : null;
+    final effectivePosterUrl = validItemPoster ?? _posterCache[item.title];
     final providers = effectiveMovie?.flatrateProviders(widget.countryCode) ?? [];
     final voteAvg = item.voteAverage ?? effectiveMovie?.voteAverage;
 

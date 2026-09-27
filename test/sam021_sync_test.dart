@@ -1,26 +1,24 @@
+import 'package:cinepulse/core/network/tmdb_client.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cinepulse/core/services/letterboxd_service.dart';
 
-void main() async {
-  test('Test sincronizzazione reale profilo Letterboxd sam021', () async {
-    final service = LetterboxdService();
-    print('Avvio sync per username: sam021...');
+void main() {
+  test('TMDb searchMovie trova Serpenti/Snake con slug', () async {
+    final client = TmdbClient();
+    final movie = await client.searchMovie('Snake', year: 2026, slug: 'serpenti');
     
-    int lastCount = 0;
-    final movies = await service.syncUserMovies(
-      'sam021',
-      onProgress: (count) {
-        lastCount = count;
-        print('Progresso download: $count film estratti...');
-      },
-    );
+    expect(movie, isNotNull);
+    expect(movie!.id, 1645164);
+    expect(movie.posterUrl, isNotEmpty);
+    expect(movie.posterUrl.contains('xHDfVddxKnvEaWeEEnr3T4Yemgc'), true);
+  });
 
-    print('TOTALE FILM TROVATI per sam021: ${movies.length}');
-    if (movies.isNotEmpty) {
-      print('Primo film: ${movies.first.title} (${movies.first.year}) - Rating: ${movies.first.rating}');
-      print('Ultimo film: ${movies.last.title} (${movies.last.year}) - Rating: ${movies.last.rating}');
-    }
-
-    expect(movies.isNotEmpty, true);
-  }, timeout: const Timeout(Duration(minutes: 3)));
+  test('TMDb searchMovie trova Serpenti/Snake anche senza slug tramite fallback bilingue', () async {
+    final client = TmdbClient();
+    final movie = await client.searchMovie('Snake', year: 2026);
+    
+    expect(movie, isNotNull);
+    expect(movie!.id, 1645164);
+    expect(movie.posterUrl, isNotEmpty);
+    expect(movie.posterUrl.contains('xHDfVddxKnvEaWeEEnr3T4Yemgc'), true);
+  });
 }
