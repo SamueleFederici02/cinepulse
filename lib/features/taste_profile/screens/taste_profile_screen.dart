@@ -526,7 +526,42 @@ class TasteProfileScreen extends ConsumerWidget {
               ],
             ],
 
-            const SizedBox(height: 10),
+            // DISCLAIMER DI CONFORMITÀ LEGALE E ATTRIBUZIONI TMDb / LETTERBOXD
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Note Legali & Attribuzioni',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    '• Questo prodotto utilizza le API di TMDb ma non è approvato o certificato da TMDb.\n'
+                    '• I dati di streaming sono aggregati tramite JustWatch / TMDb.\n'
+                    '• CinePulse è un\'applicazione autonoma indipendente, non affiliata, sponsorizzata o approvata da Letterboxd Limited.\n'
+                    '• Tutti i marchi, loghi e locandine appartengono ai rispettivi legittimi proprietari.',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textMuted,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
 
             // DISCONNETTI ACCOUNT O CAMBIA USERNAME
             Center(
