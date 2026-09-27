@@ -267,50 +267,78 @@ class LetterboxdService {
   }
 
   // --- FETCH WATCHLIST ---
-  Future<List<LetterboxdMovie>> _fetchWatchlist(String username) async {
-    final url = 'https://letterboxd.com/$username/watchlist/';
-    final response = await _dio.get(url);
-    if (response.statusCode != 200) return [];
+  // --- FETCH WATCHLIST CON PAGINAZIONE COMPLETA ---
+  Future<List<LetterboxdMovie>> _fetchWatchlist(String username, {int maxPages = 20}) async {
+    final cleanUsername = username.trim().toLowerCase();
+    final List<LetterboxdMovie> allMovies = [];
+    final Set<String> seenSlugs = {};
 
-    final doc = html_parser.parse(response.data);
-    final List<LetterboxdMovie> movies = [];
-    final posters = doc.querySelectorAll('li.poster-container, div.film-poster');
+    for (int page = 1; page <= maxPages; page++) {
+      final url = page == 1
+          ? 'https://letterboxd.com/$cleanUsername/watchlist/'
+          : 'https://letterboxd.com/$cleanUsername/watchlist/page/$page/';
 
-    for (final el in posters) {
-      final img = el.querySelector('img');
-      final posterDiv = el.classes.contains('film-poster')
-          ? el
-          : el.querySelector('.film-poster');
-      final slug = posterDiv?.attributes['data-film-slug'] ?? '';
-      final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
+      try {
+        final response = await _dio.get(url);
+        if (response.statusCode != 200) break;
 
-      int? year;
-      final yearAttr = posterDiv?.attributes['data-film-release-year'] ??
-          posterDiv?.attributes['data-release-year'] ??
-          el.attributes['data-film-release-year'] ??
-          el.attributes['data-release-year'];
-      if (yearAttr != null) {
-        year = int.tryParse(yearAttr);
-      }
-      if (year == null && slug.isNotEmpty) {
-        final slugYearMatch = RegExp(r'-(\d{4})$').firstMatch(slug);
-        if (slugYearMatch != null) {
-          year = int.tryParse(slugYearMatch.group(1)!);
+        final doc = html_parser.parse(response.data);
+        final posters = doc.querySelectorAll('li.poster-container, div.film-poster');
+        if (posters.isEmpty) break;
+
+        int addedThisPage = 0;
+        for (final el in posters) {
+          final img = el.querySelector('img');
+          final posterDiv = el.classes.contains('film-poster')
+              ? el
+              : el.querySelector('.film-poster');
+          final slug = posterDiv?.attributes['data-film-slug'] ?? '';
+          final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
+          final posterUrl = img?.attributes['src'];
+
+          int? year;
+          final yearAttr = posterDiv?.attributes['data-film-release-year'] ??
+              posterDiv?.attributes['data-release-year'] ??
+              el.attributes['data-film-release-year'] ??
+              el.attributes['data-release-year'];
+          if (yearAttr != null) {
+            year = int.tryParse(yearAttr);
+          }
+          if (year == null && slug.isNotEmpty) {
+            final slugYearMatch = RegExp(r'-(\d{4})$').firstMatch(slug);
+            if (slugYearMatch != null) {
+              year = int.tryParse(slugYearMatch.group(1)!);
+            }
+          }
+
+          final cleanSlug = slug.isNotEmpty ? slug : title.toLowerCase().replaceAll(' ', '-');
+          if (title.isNotEmpty && !seenSlugs.contains(cleanSlug)) {
+            seenSlugs.add(cleanSlug);
+            allMovies.add(
+              LetterboxdMovie(
+                slug: cleanSlug,
+                title: title,
+                year: year,
+                isInWatchlist: true,
+                posterUrl: posterUrl,
+              ),
+            );
+            addedThisPage++;
+          }
         }
-      }
 
-      if (title.isNotEmpty) {
-        movies.add(
-          LetterboxdMovie(
-            slug: slug.isNotEmpty ? slug : title.toLowerCase().replaceAll(' ', '-'),
-            title: title,
-            year: year,
-            isInWatchlist: true,
-          ),
-        );
+        if (addedThisPage == 0) break;
+
+        // Se non c'è il link 'next', siamo all'ultima pagina
+        final nextBtn = doc.querySelector('a.next, .paginate-nextprev a.next');
+        if (nextBtn == null) break;
+      } catch (e) {
+        debugPrint('Errore nel fetch watchlist pagina $page: $e');
+        break;
       }
     }
-    return movies;
+
+    return allMovies;
   }
 
   List<LetterboxdMovie> _parseMoviesFromDoc(dynamic doc) {

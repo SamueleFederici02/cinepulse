@@ -163,12 +163,27 @@ class UserLetterboxdMoviesNotifier extends Notifier<List<LetterboxdMovie>> {
           }
         }
 
-        // Assicuriamoci che i film attuali in watchlist ci siano
+        // Assicuriamoci che tutti i film attuali in watchlist ci siano e siano marcati isInWatchlist: true
         for (final w in currentWatchlist) {
           final normTitle = w.title.toLowerCase().trim();
           if (!mapByTitle.containsKey(normTitle)) {
             mapByTitle[normTitle] = w;
             modifiedCount++;
+          } else {
+            final ex = mapByTitle[normTitle]!;
+            if (!ex.isInWatchlist) {
+              mapByTitle[normTitle] = LetterboxdMovie(
+                slug: ex.slug,
+                title: ex.title,
+                year: ex.year ?? w.year,
+                rating: ex.rating,
+                watchedDate: ex.watchedDate,
+                isLiked: ex.isLiked,
+                isInWatchlist: true,
+                posterUrl: ex.posterUrl ?? w.posterUrl,
+              );
+              modifiedCount++;
+            }
           }
         }
       }
