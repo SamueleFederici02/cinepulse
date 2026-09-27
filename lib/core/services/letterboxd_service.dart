@@ -284,11 +284,27 @@ class LetterboxdService {
       final slug = posterDiv?.attributes['data-film-slug'] ?? '';
       final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
 
+      int? year;
+      final yearAttr = posterDiv?.attributes['data-film-release-year'] ??
+          posterDiv?.attributes['data-release-year'] ??
+          el.attributes['data-film-release-year'] ??
+          el.attributes['data-release-year'];
+      if (yearAttr != null) {
+        year = int.tryParse(yearAttr);
+      }
+      if (year == null && slug.isNotEmpty) {
+        final slugYearMatch = RegExp(r'-(\d{4})$').firstMatch(slug);
+        if (slugYearMatch != null) {
+          year = int.tryParse(slugYearMatch.group(1)!);
+        }
+      }
+
       if (title.isNotEmpty) {
         movies.add(
           LetterboxdMovie(
             slug: slug.isNotEmpty ? slug : title.toLowerCase().replaceAll(' ', '-'),
             title: title,
+            year: year,
             isInWatchlist: true,
           ),
         );
@@ -314,6 +330,21 @@ class LetterboxdService {
       final title = img?.attributes['alt'] ?? slug.replaceAll('-', ' ');
       final posterUrl = img?.attributes['src'];
 
+      int? year;
+      final yearAttr = posterDiv?.attributes['data-film-release-year'] ??
+          posterDiv?.attributes['data-release-year'] ??
+          el.attributes['data-film-release-year'] ??
+          el.attributes['data-release-year'];
+      if (yearAttr != null) {
+        year = int.tryParse(yearAttr);
+      }
+      if (year == null && slug.isNotEmpty) {
+        final slugYearMatch = RegExp(r'-(\d{4})$').firstMatch(slug);
+        if (slugYearMatch != null) {
+          year = int.tryParse(slugYearMatch.group(1)!);
+        }
+      }
+
       double? rating;
       final ratingSpan = el.querySelector('span.rating, p.poster-viewingdata');
       if (ratingSpan != null) {
@@ -332,6 +363,7 @@ class LetterboxdService {
           LetterboxdMovie(
             slug: slug.isNotEmpty ? slug : title.toLowerCase().replaceAll(' ', '-'),
             title: title,
+            year: year,
             rating: rating,
             posterUrl: posterUrl,
           ),

@@ -40,9 +40,25 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     super.dispose();
   }
 
+  String _getShortSortLabel(WatchlistSortOrder order) {
+    switch (order) {
+      case WatchlistSortOrder.addedDesc:
+        return 'Recenti';
+      case WatchlistSortOrder.releaseDesc:
+        return 'Anno ↓';
+      case WatchlistSortOrder.releaseAsc:
+        return 'Anno ↑';
+      case WatchlistSortOrder.ratingDesc:
+        return 'Voto ★';
+      case WatchlistSortOrder.titleAsc:
+        return 'A - Z';
+    }
+  }
+
   Future<void> _triggerLetterboxdSync() async {
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
+    _WatchlistCardState.clearCache();
     HapticFeedback.lightImpact();
 
     final username = ref.read(activeUserProvider);
@@ -218,54 +234,56 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
               child: Row(
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'LA TUA ',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              color: Colors.white,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'LA TUA ',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.1,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
-                          Text(
-                            'WATCHLIST',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              color: const Color(0xFF00E676),
-                              shadows: [
-                                Shadow(
-                                  color: const Color(0xFF00E676).withOpacity(0.55),
-                                  blurRadius: 12,
-                                ),
-                              ],
+                            Text(
+                              'WATCHLIST',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.1,
+                                color: const Color(0xFF00E676),
+                                shadows: [
+                                  Shadow(
+                                    color: const Color(0xFF00E676).withValues(alpha: 0.55),
+                                    blurRadius: 12,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${unifiedList.length} film salvati',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          '${unifiedList.length} film salvati',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   // Pulsante Refresh Sincronizzazione Letterboxd
                   GestureDetector(
                     onTap: _triggerLetterboxdSync,
                     child: Container(
-                      padding: const EdgeInsets.all(7),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(14),
@@ -273,8 +291,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                       ),
                       child: _isSyncing
                           ? const SizedBox(
-                              width: 16,
-                              height: 16,
+                              width: 18,
+                              height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: Color(0xFF00E676),
@@ -284,7 +302,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Selettore Ordinamento
+                  // Selettore Ordinamento Compatto (Anti-Overflow)
                   PopupMenuButton<WatchlistSortOrder>(
                     initialValue: _currentSortOrder,
                     tooltip: 'Ordina watchlist',
@@ -297,7 +315,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     color: AppColors.surfaceElevated,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(14),
@@ -309,7 +327,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                           const Icon(Icons.sort_rounded, color: Color(0xFF00E676), size: 16),
                           const SizedBox(width: 4),
                           Text(
-                            _currentSortOrder.label,
+                            _getShortSortLabel(_currentSortOrder),
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -601,6 +619,11 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
   static final Map<String, TmdbMovie?> _movieCache = {};
   bool _isFetching = false;
 
+  static void clearCache() {
+    _posterCache.clear();
+    _movieCache.clear();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -695,7 +718,7 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                             child: SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E676)),
                             ),
                           ),
                         ),
@@ -711,7 +734,7 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                           child: SizedBox(
                             width: 22,
                             height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E676)),
                           ),
                         ),
                       )
@@ -729,7 +752,7 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             stops: const [0.6, 1.0],
-                            colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+                            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
                           ),
                         ),
                       ),
@@ -742,12 +765,12 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.7),
+                          color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: item.isFromCinepulse
-                                ? const Color(0xFF00E676).withOpacity(0.8)
-                                : AppColors.primaryOrange.withOpacity(0.8),
+                                ? const Color(0xFF00E676).withValues(alpha: 0.8)
+                                : const Color(0xFF69F0AE).withValues(alpha: 0.8),
                           ),
                         ),
                         child: Text(
@@ -755,7 +778,7 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w800,
-                            color: item.isFromCinepulse ? const Color(0xFF00E676) : AppColors.primaryOrange,
+                            color: item.isFromCinepulse ? const Color(0xFF00E676) : const Color(0xFF69F0AE),
                           ),
                         ),
                       ),

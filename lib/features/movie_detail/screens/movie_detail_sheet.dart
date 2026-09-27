@@ -246,121 +246,8 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     ),
                   ),
 
-                  // 3. Controlli compatti Netflix-style (Play/Pause, Mute, Apri) se trailer attivo
-                  if (_youtubeController != null)
-                    Positioned(
-                      bottom: 12,
-                      right: 12,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Play / Pause
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                setState(() {
-                                  if (_isPlaying) {
-                                    _youtubeController?.pauseVideo();
-                                    _isPlaying = false;
-                                  } else {
-                                    _youtubeController?.playVideo();
-                                    _isPlaying = true;
-                                  }
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.75),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: Icon(
-                                  _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          // Mute / Unmute
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                setState(() {
-                                  if (_isMuted) {
-                                    _youtubeController?.unMute();
-                                    _isMuted = false;
-                                  } else {
-                                    _youtubeController?.mute();
-                                    _isMuted = true;
-                                  }
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.75),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                                      color: Colors.white,
-                                      size: 15,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _isMuted ? 'MUTE' : 'AUDIO',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          // Apri Trailer YouTube Esterno
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () => _launchTrailer(context),
-                              child: Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.75),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: const Icon(
-                                  Icons.open_in_new_rounded,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    // Fallback con bottone esplicito se non c'è controller trailer
+                  // Fallback con bottone esplicito se non c'è controller trailer
+                  if (_youtubeController == null)
                     Center(
                       child: GestureDetector(
                         onTap: () => _launchTrailer(context),
@@ -408,6 +295,155 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Barra Controlli Trailer Dedicata (Separata dal video, senza alcuna sovrapposizione)
+                  if (_youtubeController != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.borderSubtle),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.movie_filter_rounded, color: Color(0xFF00E676), size: 16),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Trailer',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const Spacer(),
+                          // Play / Pause
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  if (_isPlaying) {
+                                    _youtubeController?.pauseVideo();
+                                    _isPlaying = false;
+                                  } else {
+                                    _youtubeController?.playVideo();
+                                    _isPlaying = true;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppColors.borderSubtle),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                      color: Colors.white,
+                                      size: 15,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isPlaying ? 'Pausa' : 'Play',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Mute / Unmute
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  if (_isMuted) {
+                                    _youtubeController?.unMute();
+                                    _isMuted = false;
+                                  } else {
+                                    _youtubeController?.mute();
+                                    _isMuted = true;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppColors.borderSubtle),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                                      color: _isMuted ? Colors.white54 : const Color(0xFF00E676),
+                                      size: 15,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isMuted ? 'Muto' : 'Audio',
+                                      style: TextStyle(
+                                        color: _isMuted ? Colors.white70 : const Color(0xFF00E676),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Apri YouTube Esterno
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => _launchTrailer(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: AppColors.borderSubtle),
+                                ),
+                                child: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  color: Colors.white70,
+                                  size: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Poster + Titolo + Metadati + Regista Cliccabile
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

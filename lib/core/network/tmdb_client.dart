@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
@@ -31,7 +32,7 @@ class TmdbClient {
     );
   }
 
-  // --- RICERCA FILM ---
+  // --- RICERCA FILM CON MATCHING ACCURATO ---
   Future<TmdbMovie?> searchMovie(String title, {int? year}) async {
     final cacheKey = 'search_${title.toLowerCase()}_$year';
     if (_memoryCache.containsKey(cacheKey)) {
@@ -50,14 +51,95 @@ class TmdbClient {
 
       final results = response.data['results'] as List?;
       if (results != null && results.isNotEmpty) {
-        final movie = TmdbMovie.fromJson(results.first);
-        _memoryCache[cacheKey] = movie;
-        return movie;
+        final movie = _pickBestMatch(results, title, year);
+        if (movie != null) {
+          _memoryCache[cacheKey] = movie;
+          return movie;
+        }
       }
     } catch (e) {
       debugPrint('Errore nella ricerca TMDb per "$title": $e');
     }
     return null;
+  }
+
+  // --- SELEZIONE INTELLIGENTE DEL MIGLIOR RISULTATO ---
+  TmdbMovie? _pickBestMatch(List<dynamic> results, String queryTitle, int? targetYear) {
+    if (results.isEmpty) return null;
+
+    final cleanQuery = queryTitle.trim().toLowerCase();
+    final simplifiedQuery = cleanQuery
+        .replaceAll(RegExp(r'[^\w\s]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ');
+
+    double bestScore = -999999.0;
+    dynamic bestResult;
+
+    for (final item in results) {
+      if (item is! Map<String, dynamic>) continue;
+      final title = (item['title'] as String? ?? '').trim().toLowerCase();
+      final origTitle = (item['original_title'] as String? ?? '').trim().toLowerCase();
+      final releaseDate = item['release_date'] as String? ?? '';
+      final int? itemYear = releaseDate.length >= 4 ? int.tryParse(releaseDate.substring(0, 4)) : null;
+      final double pop = (item['popularity'] as num?)?.toDouble() ?? 0.0;
+
+      final simpleTitle = title
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .replaceAll(RegExp(r'\s+'), ' ');
+      final simpleOrig = origTitle
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .replaceAll(RegExp(r'\s+'), ' ');
+
+      double score = 0.0;
+
+      // 1. CORRISPONDENZA ESATTA DEL TITOLO (priorità assoluta)
+      final isExactOrig = cleanQuery == origTitle || simplifiedQuery == simpleOrig;
+      final isExactTitle = cleanQuery == title || simplifiedQuery == simpleTitle;
+
+      if (isExactOrig || isExactTitle) {
+        score += 500.0;
+      } else if (origTitle.startsWith(cleanQuery) || title.startsWith(cleanQuery) ||
+                 simpleOrig.startsWith(simplifiedQuery) || simpleTitle.startsWith(simplifiedQuery)) {
+        score += 150.0;
+      } else if (origTitle.contains(cleanQuery) || title.contains(cleanQuery)) {
+        score += 80.0;
+      }
+
+      // 2. CORRISPONDENZA ANNO (se noto)
+      if (targetYear != null && itemYear != null) {
+        if (itemYear == targetYear) {
+          score += 300.0;
+        } else {
+          final diff = (itemYear - targetYear).abs();
+          if (diff == 1) {
+            score += 100.0; // Differenza festival vs release cinema
+          } else {
+            score -= diff * 35.0; // Forte penalità se l'anno è completamente diverso
+          }
+        }
+      }
+
+      // 3. BONUS FILM RECENTI O PROSSIMA USCITA (se non abbiamo l'anno esplicito)
+      if (targetYear == null && itemYear != null) {
+        final currentYear = DateTime.now().year;
+        if (itemYear >= currentYear - 1) {
+          score += 40.0;
+        }
+      }
+
+      // 4. POPOLARITÀ LOGARITMICA (tie-breaker morbido)
+      score += math.log(pop + 1.0) * 2.0;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestResult = item;
+      }
+    }
+
+    if (bestResult != null) {
+      return TmdbMovie.fromJson(bestResult as Map<String, dynamic>);
+    }
+    return TmdbMovie.fromJson(results.first as Map<String, dynamic>);
   }
 
   // --- DETTAGLI COMPLETI + CREDITS + VIDEOS + EXTERNAL IDS + ROTTEN TOMATOES ---

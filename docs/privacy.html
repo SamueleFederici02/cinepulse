@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CinePulse - Informativa sulla Privacy / Privacy Policy</title>
+  <meta name="description" content="Informativa sulla privacy per l'applicazione mobile CinePulse. Zero tracciamento, 100% elaborazione locale on-device.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0B0E14;
+      --surface: #141923;
+      --surface-elevated: #1D2330;
+      --border: #2A3245;
+      --accent-green: #00E676;
+      --text: #F0F4F8;
+      --text-muted: #8E9BAE;
+      --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-family);
+      line-height: 1.65;
+      padding: 40px 20px 80px 20px;
+    }
+
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface-elevated);
+      padding: 10px 20px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .logo-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 14px var(--accent-green);
+    }
+
+    .logo-text {
+      font-size: 1.1rem;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      color: #FFFFFF;
+    }
+
+    .logo-text span {
+      color: var(--accent-green);
+    }
+
+    h1 {
+      font-size: 2.3rem;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.98rem;
+    }
+
+    .lang-switcher {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .lang-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 18px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .lang-btn.active, .lang-btn:hover {
+      background: var(--accent-green);
+      color: #05140A;
+      border-color: var(--accent-green);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .card h2 {
+      color: var(--accent-green);
+      font-size: 1.3rem;
+      font-weight: 800;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 18px 0 8px 0;
+      color: #FFFFFF;
+    }
+
+    p {
+      margin-bottom: 14px;
+      color: #CBD5E1;
+      font-size: 0.96rem;
+    }
+
+    ul {
+      margin-left: 20px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      color: #CBD5E1;
+      font-size: 0.95rem;
+    }
+
+    li strong {
+      color: #FFFFFF;
+    }
+
+    .badge-highlight {
+      background: rgba(0, 230, 118, 0.12);
+      border: 1px solid rgba(0, 230, 118, 0.4);
+      color: var(--accent-green);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.82rem;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 60px;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    footer a {
+      color: var(--accent-green);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    .lang-section {
+      display: none;
+    }
+
+    .lang-section.visible {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo-badge">
+        <div class="logo-dot"></div>
+        <div class="logo-text">CINE<span>PULSE</span></div>
+      </div>
+      <h1 id="page-title">Informativa sulla Privacy</h1>
+      <p class="subtitle" id="page-sub">Ultimo aggiornamento: Settembre 2026</p>
+
+      <div class="lang-switcher">
+        <button class="lang-btn active" onclick="switchLang('it')">Italiano 🇮🇹</button>
+        <button class="lang-btn" onclick="switchLang('en')">English 🇬🇧</button>
+      </div>
+    </header>
+
+    <!-- SEZIONE ITALIANO -->
+    <div id="section-it" class="lang-section visible">
+      <div class="card">
+        <h2>1. Sintesi: Zero Tracciamento & Elaborazione 100% Locale</h2>
+        <p><strong>CinePulse</strong> ("noi", "nostro", o "l'applicazione") mette la riservatezza e la privacy dei tuoi dati al primo posto:</p>
+        <ul>
+          <li><span class="badge-highlight">Nessun Server Proprietario</span>: Non possediamo né gestiamo database o server in cui vengono archiviati i tuoi dati o la tua cronologia di visione.</li>
+          <li><span class="badge-highlight">Nessuna Registrazione</span>: L'app non richiede creazione di account, email o password.</li>
+          <li><span class="badge-highlight">100% Sul Dispositivo</span>: Tutti i film visti, i voti, le liste e il profilo di gusto algoritmico sono salvati esclusivamente nella memoria protetta del tuo smartphone (sandbox locale Hive).</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>2. Dati e Interazioni</h2>
+        <h3>A. Sincronizzazione ed Export Letterboxd</h3>
+        <p>Quando inserisci il tuo username pubblico Letterboxd o importi un file ZIP/CSV esportato, l'analisi del file avviene <strong>esclusivamente all'interno del tuo dispositivo</strong>. Nessun dato personale viene caricato o trasmesso a server terzi.</p>
+
+        <h3>B. Metadati dei Film, Locandine e Piattaforme di Streaming</h3>
+        <p>Per mostrare trame in italiano, locandine in alta risoluzione, attori, registi e la disponibilità sulle piattaforme di streaming (Netflix, Prime Video, Disney+, Apple TV+, ecc.), CinePulse comunica direttamente con:</p>
+        <ul>
+          <li><strong>The Movie Database (TMDb) API</strong>: per i dettagli cinematografici e le piattaforme streaming (JustWatch). Consulta la <a href="https://www.themoviedb.org/privacy-policy" target="_blank" style="color: var(--accent-green);">Privacy Policy di TMDb</a>.</li>
+          <li><strong>OMDb API</strong>: per mostrare i punteggi aggregati della critica (Rotten Tomatoes, IMDb, Metacritic).</li>
+        </ul>
+        <p>Queste chiamate contengono unicamente identificatori pubblici di film o parole chiave di ricerca e non trasmettono alcuna informazione personale dell'utente.</p>
+
+        <h3>C. Trailer Video YouTube</h3>
+        <p>La visualizzazione dei trailer ufficiali utilizza il player standard YouTube. Nessun dato o credenziale Google viene raccolta da CinePulse durante la visione.</p>
+      </div>
+
+      <div class="card">
+        <h2>3. Autorizzazioni del Dispositivo (Android Permissions)</h2>
+        <p>CinePulse dichiara e utilizza unicamente i seguenti permessi minimi:</p>
+        <ul>
+          <li><strong>android.permission.INTERNET</strong>: strettamente necessario per scaricare copertine dei film, trame e disponibilità streaming da TMDb.</li>
+          <li><strong>android.permission.ACCESS_NETWORK_STATE</strong>: utilizzato per verificare se il dispositivo è connesso prima di effettuare le chiamate di rete.</li>
+        </ul>
+        <p>L'app <strong>NON</strong> richiede né accede a permessi sensibili come: Posizione/GPS, Fotocamera, Microfono, Rubrica/Contatti, SMS o Archivio condiviso.</p>
+      </div>
+
+      <div class="card">
+        <h2>4. Minori e Sicurezza</h2>
+        <p>CinePulse non raccoglie consapevolmente alcuna informazione personale da minori di 13 anni (o dell'età minima prevista dalla legislazione applicabile).</p>
+      </div>
+
+      <div class="card">
+        <h2>5. Note Legali e Attribuzioni</h2>
+        <p>Questo prodotto utilizza le API di TMDb ma non è approvato né certificato ufficialmente da TMDb. CinePulse è un'applicazione open source indipendente e non è affiliata, sponsorizzata né associata a Letterboxd Limited o alle sue affiliate.</p>
+      </div>
+
+      <div class="card">
+        <h2>6. Contatti</h2>
+        <p>Per qualsiasi domanda, segnalazione o richiesta relativa alla presente Privacy Policy o all'applicazione CinePulse, è possibile aprire una segnalazione sulla pagina GitHub ufficiale:</p>
+        <p><a href="https://github.com/SamueleFederici02/cinepulse" target="_blank" style="color: var(--accent-green); font-weight: 700;">https://github.com/SamueleFederici02/cinepulse</a></p>
+      </div>
+    </div>
+
+    <!-- SEZIONE INGLESE -->
+    <div id="section-en" class="lang-section">
+      <div class="card">
+        <h2>1. Summary: Zero Tracking & 100% Local On-Device Processing</h2>
+        <p><strong>CinePulse</strong> ("we", "our", or "the app") is committed to protecting your privacy:</p>
+        <ul>
+          <li><span class="badge-highlight">No Proprietary Servers</span>: We do NOT own or operate any remote servers or databases where your viewing history is stored.</li>
+          <li><span class="badge-highlight">No Account Required</span>: CinePulse does not require an account, password, or email address.</li>
+          <li><span class="badge-highlight">100% On-Device</span>: All your film history, ratings, watchlists, and taste profile computations are processed and stored exclusively in your local app sandbox.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>2. Data and Information Handled</h2>
+        <h3>A. Letterboxd Public Sync and CSV Import</h3>
+        <p>When you enter your public Letterboxd username or import an exported ZIP/CSV archive, all parsing and indexing happens <strong>entirely on your local device</strong>. None of your viewing history is ever uploaded to any third-party server.</p>
+
+        <h3>B. Public Movie Metadata and Streaming Availability</h3>
+        <p>To provide movie synopses, posters, cast, directors, and streaming availability across platforms, CinePulse directly queries:</p>
+        <ul>
+          <li><strong>The Movie Database (TMDb) API</strong>: for movie metadata and JustWatch streaming availability. See <a href="https://www.themoviedb.org/privacy-policy" target="_blank" style="color: var(--accent-green);">TMDb Privacy Policy</a>.</li>
+          <li><strong>OMDb API</strong>: for aggregate critical reviews (Rotten Tomatoes, Metacritic, IMDb).</li>
+        </ul>
+        <p>These requests only contain public search strings or movie identifiers and contain no personally identifiable user information.</p>
+
+        <h3>C. YouTube Trailers</h3>
+        <p>Official movie trailers are displayed using YouTube's standard web player. CinePulse does not collect or access any Google account information.</p>
+      </div>
+
+      <div class="card">
+        <h2>3. Device Permissions</h2>
+        <ul>
+          <li><strong>android.permission.INTERNET</strong>: Strictly required to fetch movie posters, metadata, and streaming providers.</li>
+          <li><strong>android.permission.ACCESS_NETWORK_STATE</strong>: Used to verify network connectivity before querying APIs.</li>
+        </ul>
+        <p>CinePulse does <strong>NOT</strong> request access to sensitive permissions such as Location, Camera, Contacts, Microphone, or Storage.</p>
+      </div>
+
+      <div class="card">
+        <h2>4. Legal Attributions</h2>
+        <p>This product uses the TMDb API but is not endorsed or certified by TMDb. CinePulse is an independent companion app and is not affiliated, endorsed, or associated with Letterboxd Limited.</p>
+      </div>
+
+      <div class="card">
+        <h2>5. Contact</h2>
+        <p>If you have any questions regarding this Privacy Policy, please open an issue on the official GitHub repository:</p>
+        <p><a href="https://github.com/SamueleFederici02/cinepulse" target="_blank" style="color: var(--accent-green); font-weight: 700;">https://github.com/SamueleFederici02/cinepulse</a></p>
+      </div>
+    </div>
+
+    <footer>
+      <p>&copy; 2026 CinePulse &bull; Open-Source Movie Discovery</p>
+      <p><a href="https://github.com/SamueleFederici02/cinepulse">GitHub Repository</a></p>
+    </footer>
+  </div>
+
+  <script>
+    function switchLang(lang) {
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.lang-section').forEach(sec => sec.classList.remove('visible'));
+
+      if (lang === 'it') {
+        document.getElementById('section-it').classList.add('visible');
+        document.querySelectorAll('.lang-btn')[0].classList.add('active');
+        document.getElementById('page-title').innerText = "Informativa sulla Privacy";
+        document.getElementById('page-sub').innerText = "Ultimo aggiornamento: Settembre 2026";
+      } else {
+        document.getElementById('section-en').classList.add('visible');
+        document.querySelectorAll('.lang-btn')[1].classList.add('active');
+        document.getElementById('page-title').innerText = "Privacy Policy";
+        document.getElementById('page-sub').innerText = "Last updated: September 2026";
+      }
+    }
+  </script>
+</body>
+</html>
