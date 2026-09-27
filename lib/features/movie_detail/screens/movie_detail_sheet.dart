@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/models/tmdb_movie.dart';
 import '../../../core/models/watch_provider.dart';
+import '../../../core/network/tmdb_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../widgets/person_filmography_sheet.dart';
 
-class MovieDetailSheet extends StatelessWidget {
+class MovieDetailSheet extends StatefulWidget {
   final TmdbMovie movie;
   final String countryCode;
   final VoidCallback onWatchlistToggle;
@@ -22,12 +25,94 @@ class MovieDetailSheet extends StatelessWidget {
     required this.onMarkAsWatched,
   });
 
+  @override
+  State<MovieDetailSheet> createState() => _MovieDetailSheetState();
+}
+
+class _MovieDetailSheetState extends State<MovieDetailSheet> {
+  late TmdbMovie _movie;
+  YoutubePlayerController? _youtubeController;
+  bool _isMuted = true;
+  late bool _isInWatchlist;
+
+  @override
+  void initState() {
+    super.initState();
+    _movie = widget.movie;
+    _isInWatchlist = widget.movie.isInUserWatchlist;
+    _initTrailer();
+    _loadFullDetailsIfNeeded();
+  }
+
+  void _initTrailer() {
+    final key = _movie.trailerKey;
+    if (key != null && key.isNotEmpty) {
+      _youtubeController?.close();
+      _youtubeController = YoutubePlayerController.fromVideoId(
+        videoId: key,
+        autoPlay: true,
+        params: const YoutubePlayerParams(
+          mute: true,
+          showControls: false,
+          showFullscreenButton: false,
+          loop: true,
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadFullDetailsIfNeeded() async {
+    if (_movie.castMembers.isEmpty || _movie.trailerKey == null || _movie.directorId == null) {
+      try {
+        final client = TmdbClient();
+        final detailed = await client.getMovieDetails(_movie.id, countryCode: widget.countryCode);
+        if (detailed != null && mounted) {
+          setState(() {
+            _movie = detailed.copyWith(
+              isInUserWatchlist: _isInWatchlist,
+              matchScore: _movie.matchScore > 0 ? _movie.matchScore : detailed.matchScore,
+              matchReasons: _movie.matchReasons.isNotEmpty ? _movie.matchReasons : detailed.matchReasons,
+            );
+            if (_youtubeController == null && _movie.trailerKey != null) {
+              _initTrailer();
+            }
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void dispose() {
+    _youtubeController?.close();
+    super.dispose();
+  }
+
+  void _openPersonFilmography({
+    int? personId,
+    required String name,
+    String? profileUrl,
+    required bool isDirector,
+  }) {
+    if (personId == null) return;
+    HapticFeedback.lightImpact();
+    PersonFilmographySheet.show(
+      context,
+      personId: personId,
+      personName: name,
+      profileUrl: profileUrl,
+      role: isDirector ? 'Regista' : 'Attore',
+      isDirector: isDirector,
+      countryCode: widget.countryCode,
+    );
+  }
+
   Future<void> _launchTrailer(BuildContext context) async {
     final String url;
-    if (movie.trailerKey != null && movie.trailerKey!.isNotEmpty) {
-      url = 'https://www.youtube.com/watch?v=${movie.trailerKey}';
+    if (_movie.trailerKey != null && _movie.trailerKey!.isNotEmpty) {
+      url = 'https://www.youtube.com/watch?v=${_movie.trailerKey}';
     } else {
-      url = 'https://www.youtube.com/results?search_query=${Uri.encodeComponent('${movie.title} official trailer')}';
+      url = 'https://www.youtube.com/results?search_query=${Uri.encodeComponent('${_movie.title} official trailer')}';
     }
 
     final uri = Uri.parse(url);
@@ -57,11 +142,11 @@ class MovieDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final flatrateProviders = movie.flatrateProviders(countryCode);
-    final freeProviders = movie.freeProviders(countryCode);
-    final rentProviders = movie.rentProviders(countryCode);
-    final buyProviders = movie.buyProviders(countryCode);
-    final countryName = AppConfig.supportedCountries[countryCode] ?? countryCode;
+    final flatrateProviders = _movie.flatrateProviders(widget.countryCode);
+    final freeProviders = _movie.freeProviders(widget.countryCode);
+    final rentProviders = _movie.rentProviders(widget.countryCode);
+    final buyProviders = _movie.buyProviders(widget.countryCode);
+    final countryName = AppConfig.supportedCountries[widget.countryCode] ?? widget.countryCode;
 
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
@@ -70,7 +155,7 @@ class MovieDetailSheet extends StatelessWidget {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // AppBar Collassabile con Backdrop HD
+          // AppBar Collassabile con Trailer Netflix-Style o Backdrop HD
           SliverAppBar(
             expandedHeight: 330,
             pinned: true,
@@ -93,15 +178,18 @@ class MovieDetailSheet extends StatelessWidget {
                   backgroundColor: Colors.black.withOpacity(0.6),
                   child: IconButton(
                     icon: Icon(
-                      movie.isInUserWatchlist ? Icons.bookmark : Icons.bookmark_border,
-                      color: movie.isInUserWatchlist
+                      _isInWatchlist ? Icons.bookmark : Icons.bookmark_border,
+                      color: _isInWatchlist
                           ? AppColors.primaryOrange
                           : Colors.white,
                       size: 20,
                     ),
                     onPressed: () {
                       HapticFeedback.lightImpact();
-                      onWatchlistToggle();
+                      setState(() {
+                        _isInWatchlist = !_isInWatchlist;
+                      });
+                      widget.onWatchlistToggle();
                     },
                   ),
                 ),
@@ -112,30 +200,130 @@ class MovieDetailSheet extends StatelessWidget {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CachedNetworkImage(
-                    imageUrl: movie.backdropUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
-                    errorWidget: (_, __, ___) => Container(color: AppColors.surface),
-                  ),
+                  // 1. Video Player Trailer or Backdrop
+                  if (_youtubeController != null)
+                    Positioned.fill(
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        clipBehavior: Clip.hardEdge,
+                        child: SizedBox(
+                          width: 16,
+                          height: 9,
+                          child: YoutubePlayer(
+                            controller: _youtubeController!,
+                            aspectRatio: 16 / 9,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    CachedNetworkImage(
+                      imageUrl: _movie.backdropUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: AppColors.surfaceElevated),
+                      errorWidget: (_, __, ___) => Container(color: AppColors.surface),
+                    ),
+
+                  // 2. Gradienti estetici per contrasto e leggibilità
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        stops: const [0.0, 0.5, 0.85, 1.0],
+                        stops: const [0.0, 0.45, 0.85, 1.0],
                         colors: [
-                          Colors.black.withOpacity(0.3),
+                          Colors.black.withOpacity(0.55),
                           Colors.transparent,
-                          AppColors.background.withOpacity(0.8),
+                          AppColors.background.withOpacity(0.85),
                           AppColors.background,
                         ],
                       ),
                     ),
                   ),
-                  Center(
-                    child: GestureDetector(
-                      onTap: () => _launchTrailer(context),
+
+                  // 3. Controlli Netflix-style (Mute/Unmute & Apri Trailer) se il trailer è attivo
+                  if (_youtubeController != null)
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  if (_isMuted) {
+                                    _youtubeController?.unMute();
+                                    _isMuted = false;
+                                  } else {
+                                    _youtubeController?.mute();
+                                    _isMuted = true;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      _isMuted ? 'MUTED' : 'AUDIO',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () => _launchTrailer(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.7),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    // Fallback con bottone esplicito se non c'è controller trailer
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => _launchTrailer(context),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
@@ -180,16 +368,16 @@ class MovieDetailSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Poster + Titolo + Metadati
+                  // Poster + Titolo + Metadati + Regista Cliccabile
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Hero(
-                        tag: 'poster_${movie.id}',
+                        tag: 'poster_${_movie.id}',
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: CachedNetworkImage(
-                            imageUrl: movie.posterUrl,
+                            imageUrl: _movie.posterUrl,
                             width: 105,
                             height: 155,
                             fit: BoxFit.cover,
@@ -202,7 +390,7 @@ class MovieDetailSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              movie.title,
+                              _movie.title,
                               style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
@@ -211,29 +399,76 @@ class MovieDetailSheet extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            if (movie.director != null)
-                              Text(
-                                'Regia: ${movie.director}',
-                                style: const TextStyle(
-                                  color: AppColors.electricCyan,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                            // Regista interattivo con foto e filmografia
+                            if (_movie.director != null) ...[
+                              GestureDetector(
+                                onTap: () => _openPersonFilmography(
+                                  personId: _movie.directorId,
+                                  name: _movie.director!,
+                                  profileUrl: _movie.directorProfileUrl,
+                                  isDirector: true,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.electricCyan.withOpacity(0.35)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_movie.directorProfileUrl != null)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: CachedNetworkImage(
+                                            imageUrl: _movie.directorProfileUrl!,
+                                            width: 22,
+                                            height: 22,
+                                            fit: BoxFit.cover,
+                                            errorWidget: (_, __, ___) => const Icon(
+                                              Icons.movie_creation_outlined,
+                                              size: 16,
+                                              color: AppColors.electricCyan,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        const Icon(Icons.movie_creation_outlined, size: 16, color: AppColors.electricCyan),
+                                      const SizedBox(width: 7),
+                                      Flexible(
+                                        child: Text(
+                                          'Regia: ${_movie.director}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.electricCyan,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.electricCyan),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            const SizedBox(height: 8),
+                              const SizedBox(height: 8),
+                            ],
                             Wrap(
                               spacing: 8,
                               runSpacing: 4,
                               children: [
-                                if (movie.releaseYear.isNotEmpty)
-                                  _MetaChip(label: movie.releaseYear),
-                                if (movie.formattedRuntime.isNotEmpty)
-                                  _MetaChip(label: movie.formattedRuntime),
+                                if (_movie.releaseYear.isNotEmpty)
+                                  _MetaChip(label: _movie.releaseYear),
+                                if (_movie.formattedRuntime.isNotEmpty)
+                                  _MetaChip(label: _movie.formattedRuntime),
                               ],
                             ),
                             const SizedBox(height: 12),
                             // Match Score
-                            if (movie.matchScore > 0)
+                            if (_movie.matchScore > 0)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
@@ -244,7 +479,7 @@ class MovieDetailSheet extends StatelessWidget {
                                   ),
                                 ),
                                 child: Text(
-                                  '${movie.matchScore.toInt()}% CinePulse Match',
+                                  '${_movie.matchScore.toInt()}% CinePulse Match',
                                   style: const TextStyle(
                                     color: AppColors.primaryOrange,
                                     fontWeight: FontWeight.w800,
@@ -280,29 +515,29 @@ class MovieDetailSheet extends StatelessWidget {
                         _ScoreBadge(
                           iconText: '🍅',
                           label: 'Rotten Tomatoes',
-                          value: movie.rottenTomatoesScore ?? '91%',
+                          value: _movie.rottenTomatoesScore ?? '91%',
                           highlightColor: Colors.redAccent,
                         ),
                         // LETTERBOXD
                         _ScoreBadge(
                           iconText: '🟢',
                           label: 'Letterboxd',
-                          value: '★ ${movie.letterboxdScore ?? '4.2'}',
+                          value: '★ ${_movie.letterboxdScore ?? '4.2'}',
                           highlightColor: AppColors.primaryOrange,
                         ),
                         // IMDB
                         _ScoreBadge(
                           iconText: '⭐',
                           label: 'IMDb',
-                          value: movie.imdbScore != null ? '${movie.imdbScore}/10' : '${movie.voteAverage.toStringAsFixed(1)}/10',
+                          value: _movie.imdbScore != null ? '${_movie.imdbScore}/10' : '${_movie.voteAverage.toStringAsFixed(1)}/10',
                           highlightColor: Colors.amber,
                         ),
                         // METACRITIC
-                        if (movie.metacriticScore != null)
+                        if (_movie.metacriticScore != null)
                           _ScoreBadge(
                             iconText: 'Ⓜ️',
                             label: 'Metacritic',
-                            value: movie.metacriticScore!,
+                            value: _movie.metacriticScore!,
                             highlightColor: Colors.tealAccent,
                           ),
                       ],
@@ -374,13 +609,13 @@ class MovieDetailSheet extends StatelessWidget {
                   const SizedBox(height: 24),
 
                   // PERCHÉ TI PIACERÀ
-                  if (movie.matchReasons.isNotEmpty) ...[
+                  if (_movie.matchReasons.isNotEmpty) ...[
                     const _SectionTitle(
                       title: 'Perché fa al caso tuo',
                       icon: Icons.auto_awesome,
                     ),
                     const SizedBox(height: 10),
-                    ...movie.matchReasons.map(
+                    ..._movie.matchReasons.map(
                       (r) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Row(
@@ -408,8 +643,8 @@ class MovieDetailSheet extends StatelessWidget {
                   const _SectionTitle(title: 'Sinossi', icon: Icons.notes_rounded),
                   const SizedBox(height: 8),
                   Text(
-                    movie.overview.isNotEmpty
-                        ? movie.overview
+                    _movie.overview.isNotEmpty
+                        ? _movie.overview
                         : 'Nessuna sinossi disponibile in italiano.',
                     style: const TextStyle(
                       color: AppColors.textSecondary,
@@ -420,14 +655,92 @@ class MovieDetailSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // CAST PRINCIPALE
-                  if (movie.cast.isNotEmpty) ...[
+                  // CAST PRINCIPALE CON FOTO E FILMOGRAFIA INTERATTIVA
+                  if (_movie.castMembers.isNotEmpty) ...[
+                    const _SectionTitle(title: 'Cast Principale', icon: Icons.people_alt_rounded),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 135,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: _movie.castMembers.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final actor = _movie.castMembers[index];
+                          return GestureDetector(
+                            onTap: () => _openPersonFilmography(
+                              personId: actor.id,
+                              name: actor.name,
+                              profileUrl: actor.profileUrl,
+                              isDirector: false,
+                            ),
+                            child: SizedBox(
+                              width: 78,
+                              child: Column(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Container(
+                                      width: 70,
+                                      height: 70,
+                                      color: AppColors.surfaceElevated,
+                                      child: actor.profileUrl != null
+                                          ? CachedNetworkImage(
+                                              imageUrl: actor.profileUrl!,
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, __) => Container(color: Colors.white10),
+                                              errorWidget: (_, __, ___) => const Icon(
+                                                Icons.person,
+                                                size: 32,
+                                                color: Colors.white30,
+                                              ),
+                                            )
+                                          : const Icon(Icons.person, size: 32, color: Colors.white30),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    actor.name,
+                                    maxLines: 2,
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  if (actor.character != null && actor.character!.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      actor.character!,
+                                      maxLines: 1,
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                  ] else if (_movie.cast.isNotEmpty) ...[
                     const _SectionTitle(title: 'Cast Principale', icon: Icons.people_alt_rounded),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: movie.cast.map((actor) {
+                      children: _movie.cast.map((actor) {
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
@@ -467,7 +780,7 @@ class MovieDetailSheet extends StatelessWidget {
                           ),
                           onPressed: () {
                             HapticFeedback.mediumImpact();
-                            onMarkAsWatched();
+                            widget.onMarkAsWatched();
                             Navigator.of(context).pop();
                           },
                         ),
@@ -476,7 +789,7 @@ class MovieDetailSheet extends StatelessWidget {
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: movie.isInUserWatchlist
+                            backgroundColor: _isInWatchlist
                                 ? AppColors.surfaceElevated
                                 : AppColors.primaryOrange,
                             foregroundColor: Colors.white,
@@ -486,16 +799,19 @@ class MovieDetailSheet extends StatelessWidget {
                             ),
                           ),
                           icon: Icon(
-                            movie.isInUserWatchlist ? Icons.check : Icons.bookmark_add,
+                            _isInWatchlist ? Icons.check : Icons.bookmark_add,
                             size: 20,
                           ),
                           label: Text(
-                            movie.isInUserWatchlist ? 'In Watchlist' : 'Salva in Watchlist',
+                            _isInWatchlist ? 'In Watchlist' : 'Salva in Watchlist',
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           onPressed: () {
                             HapticFeedback.lightImpact();
-                            onWatchlistToggle();
+                            setState(() {
+                              _isInWatchlist = !_isInWatchlist;
+                            });
+                            widget.onWatchlistToggle();
                           },
                         ),
                       ),

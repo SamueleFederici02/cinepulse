@@ -81,6 +81,9 @@ class TmdbClient {
 
       // Regista e Cast
       String? director;
+      int? directorId;
+      String? directorProfilePath;
+      List<CastMember> castMembers = [];
       List<String> castList = [];
       if (data['credits'] != null) {
         final crew = data['credits']['crew'] as List?;
@@ -91,16 +94,18 @@ class TmdbClient {
           );
           if (dir != null) {
             director = dir['name'];
+            directorId = dir['id'];
+            directorProfilePath = dir['profile_path'];
           }
         }
 
         final cast = data['credits']['cast'] as List?;
         if (cast != null) {
-          castList = cast
-              .take(6)
-              .map((c) => c['name']?.toString() ?? '')
-              .where((c) => c.isNotEmpty)
+          castMembers = cast
+              .take(15)
+              .map((c) => CastMember.fromJson(c as Map<String, dynamic>))
               .toList();
+          castList = castMembers.take(6).map((c) => c.name).toList();
         }
       }
 
@@ -202,8 +207,11 @@ class TmdbClient {
       final letterboxdRating = (movie.voteAverage / 2.0).clamp(1.0, 5.0).toStringAsFixed(1);
 
       movie = movie.copyWith(
+        directorId: directorId,
         director: director,
+        directorProfilePath: directorProfilePath,
         cast: castList,
+        castMembers: castMembers,
         trailerKey: trailerKey,
         watchProviders: providersMap,
         rottenTomatoesScore: rottenTomatoes,
@@ -472,5 +480,37 @@ class TmdbClient {
 
     _memoryCache[cacheKey] = sortedList;
     return sortedList;
+  }
+
+  // --- FILMOGRAFIA COMPLETA DI UN ATTORE O REGISTA ---
+  Future<List<TmdbMovie>> getPersonFilmography(int personId, {bool isDirector = false}) async {
+    final cacheKey = 'person_filmography_${personId}_$isDirector';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return (_memoryCache[cacheKey] as List).cast<TmdbMovie>();
+    }
+
+    try {
+      final res = await _dio.get(
+        '/person/$personId/movie_credits',
+        queryParameters: {'language': 'it-IT'},
+      );
+      final List results;
+      if (isDirector) {
+        final crew = res.data['crew'] as List? ?? [];
+        results = crew.where((c) => c['job'] == 'Director').toList();
+      } else {
+        results = res.data['cast'] as List? ?? [];
+      }
+      final movies = results
+          .map((m) => TmdbMovie.fromJson(m as Map<String, dynamic>))
+          .where((m) => m.posterPath != null && m.posterPath!.isNotEmpty)
+          .toList();
+      movies.sort((a, b) => b.voteAverage.compareTo(a.voteAverage));
+      _memoryCache[cacheKey] = movies;
+      return movies;
+    } catch (e) {
+      debugPrint('Errore getPersonFilmography per $personId: $e');
+    }
+    return [];
   }
 }

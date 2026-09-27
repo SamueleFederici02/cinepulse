@@ -1,5 +1,37 @@
 import 'watch_provider.dart';
 
+class CastMember {
+  final int id;
+  final String name;
+  final String? character;
+  final String? profilePath;
+
+  const CastMember({
+    required this.id,
+    required this.name,
+    this.character,
+    this.profilePath,
+  });
+
+  String get profileUrl => profilePath != null
+      ? 'https://image.tmdb.org/t/p/w185$profilePath'
+      : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=185';
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'character': character,
+    'profilePath': profilePath,
+  };
+
+  factory CastMember.fromJson(Map<String, dynamic> json) => CastMember(
+    id: (json['id'] as num?)?.toInt() ?? 0,
+    name: json['name']?.toString() ?? '',
+    character: json['character']?.toString(),
+    profilePath: json['profile_path'] ?? json['profilePath'],
+  );
+}
+
 class TmdbMovie {
   final int id;
   final String title;
@@ -13,8 +45,11 @@ class TmdbMovie {
   final List<int> genreIds;
   final List<String> genres;
   final int? runtimeMinutes;
+  final int? directorId;
   final String? director;
+  final String? directorProfilePath;
   final List<String> cast;
+  final List<CastMember> castMembers;
   final String? trailerKey;
   final Map<String, List<WatchProvider>> watchProviders; // 'IT' -> list of providers
   final double matchScore; // 0.0 to 100.0
@@ -40,8 +75,11 @@ class TmdbMovie {
     this.genreIds = const [],
     this.genres = const [],
     this.runtimeMinutes,
+    this.directorId,
     this.director,
+    this.directorProfilePath,
     this.cast = const [],
+    this.castMembers = const [],
     this.trailerKey,
     this.watchProviders = const {},
     this.matchScore = 0.0,
@@ -52,6 +90,10 @@ class TmdbMovie {
     this.imdbScore,
     this.metacriticScore,
   });
+
+  String? get directorProfileUrl => directorProfilePath != null
+      ? 'https://image.tmdb.org/t/p/w185$directorProfilePath'
+      : null;
 
   String get posterUrl => posterPath != null
       ? 'https://image.tmdb.org/t/p/w780$posterPath'
@@ -119,8 +161,11 @@ class TmdbMovie {
     List<int>? genreIds,
     List<String>? genres,
     int? runtimeMinutes,
+    int? directorId,
     String? director,
+    String? directorProfilePath,
     List<String>? cast,
+    List<CastMember>? castMembers,
     String? trailerKey,
     Map<String, List<WatchProvider>>? watchProviders,
     double? matchScore,
@@ -144,8 +189,11 @@ class TmdbMovie {
       genreIds: genreIds ?? this.genreIds,
       genres: genres ?? this.genres,
       runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+      directorId: directorId ?? this.directorId,
       director: director ?? this.director,
+      directorProfilePath: directorProfilePath ?? this.directorProfilePath,
       cast: cast ?? this.cast,
+      castMembers: castMembers ?? this.castMembers,
       trailerKey: trailerKey ?? this.trailerKey,
       watchProviders: watchProviders ?? this.watchProviders,
       matchScore: matchScore ?? this.matchScore,
@@ -172,10 +220,13 @@ class TmdbMovie {
       'genre_ids': genreIds,
       'genres': genres,
       'runtime': runtimeMinutes,
+      'directorId': directorId,
       'director': director,
+      'directorProfilePath': directorProfilePath,
       'cast': cast,
+      'castMembers': castMembers.map((c) => c.toJson()).toList(),
       'trailerKey': trailerKey,
-      'watchProviders': watchProviders?.map(
+      'watchProviders': watchProviders.map(
         (k, v) => MapEntry(k, v.map((p) => p.toJson()).toList()),
       ),
       'matchScore': matchScore,
@@ -221,6 +272,13 @@ class TmdbMovie {
       });
     }
 
+    List<CastMember> members = [];
+    if (json['castMembers'] != null && json['castMembers'] is List) {
+      members = (json['castMembers'] as List)
+          .map((c) => CastMember.fromJson(c as Map<String, dynamic>))
+          .toList();
+    }
+
     return TmdbMovie(
       id: (json['id'] as num).toInt(),
       title: json['title'] ?? json['name'] ?? '',
@@ -234,8 +292,11 @@ class TmdbMovie {
       genreIds: gIds,
       genres: gNames,
       runtimeMinutes: (json['runtime'] as num?)?.toInt(),
+      directorId: (json['directorId'] as num?)?.toInt(),
       director: json['director']?.toString(),
+      directorProfilePath: json['directorProfilePath']?.toString(),
       cast: json['cast'] != null ? List<String>.from(json['cast'] as List) : const [],
+      castMembers: members,
       trailerKey: json['trailerKey']?.toString(),
       watchProviders: providers ?? const {},
       matchScore: (json['matchScore'] as num?)?.toDouble() ?? 0.0,

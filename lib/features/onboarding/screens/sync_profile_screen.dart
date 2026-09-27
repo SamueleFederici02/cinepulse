@@ -483,22 +483,45 @@ class _SyncProfileScreenState extends ConsumerState<SyncProfileScreen> {
 
                       const SizedBox(height: 16),
 
-                      // BOTTONE ESPLORA COME OSPITE (NUOVE USCITE & TOP 250 SENZA ACCOUNT)
-                      TextButton.icon(
-                        icon: const Icon(
-                          Icons.explore_outlined,
-                          color: AppColors.amberFlame,
-                          size: 19,
+                      // BOTTONE ENTRA DIRETTAMENTE CON CINEPULSE STANDALONE
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.amberFlame.withOpacity(0.4)),
                         ),
-                        label: const Text(
-                          'Esplora senza account (Nuove uscite & Top 250)',
-                          style: TextStyle(
-                            color: AppColors.amberFlame,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide.none,
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
+                          icon: const Icon(Icons.rocket_launch_rounded, color: AppColors.amberFlame, size: 22),
+                          label: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                'Inizia senza Letterboxd (CinePulse Standalone)',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Esplora film, traccia cosa guardi e ricevi consigli on-device',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          onPressed: _exploreAsGuest,
                         ),
-                        onPressed: _exploreAsGuest,
                       ).animate().fadeIn(delay: 600.ms),
                     ] else ...[
                       // ANIMAZIONE DI STATO SYNC

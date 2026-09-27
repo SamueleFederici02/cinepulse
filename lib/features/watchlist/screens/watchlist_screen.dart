@@ -8,6 +8,17 @@ import '../../../core/providers/app_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../movie_detail/screens/movie_detail_sheet.dart';
 
+enum WatchlistSortOrder {
+  addedDesc('Più recenti aggiunti'),
+  releaseDesc('Anno: più recente (↓)'),
+  releaseAsc('Anno: meno recente (↑)'),
+  ratingDesc('Voto più alto (★)'),
+  titleAsc('Titolo (A - Z)');
+
+  final String label;
+  const WatchlistSortOrder(this.label);
+}
+
 class WatchlistScreen extends ConsumerStatefulWidget {
   const WatchlistScreen({super.key});
 
@@ -18,6 +29,7 @@ class WatchlistScreen extends ConsumerStatefulWidget {
 class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   String _searchQuery = '';
   int _activeFilterIndex = 0; // 0: Tutti, 1: CinePulse, 2: Letterboxd, 3: In Streaming
+  WatchlistSortOrder _currentSortOrder = WatchlistSortOrder.addedDesc;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -40,7 +52,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
               ref.read(watchlistProvider.notifier).removeMovie(movie.id);
             },
             onMarkAsWatched: () {
-              ref.read(recommendationsProvider.notifier).dismissMovie(movie.id);
+              ref.read(recommendationsProvider.notifier).markMovieAsWatched(movie);
               ref.read(watchlistProvider.notifier).removeMovie(movie.id);
             },
           );
@@ -124,6 +136,36 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       }).toList();
     }
 
+    // Ordinamento
+    switch (_currentSortOrder) {
+      case WatchlistSortOrder.addedDesc:
+        break;
+      case WatchlistSortOrder.releaseDesc:
+        filtered.sort((a, b) {
+          final ya = int.tryParse(a.year ?? '') ?? 0;
+          final yb = int.tryParse(b.year ?? '') ?? 0;
+          return yb.compareTo(ya);
+        });
+        break;
+      case WatchlistSortOrder.releaseAsc:
+        filtered.sort((a, b) {
+          final ya = int.tryParse(a.year ?? '') ?? 9999;
+          final yb = int.tryParse(b.year ?? '') ?? 9999;
+          return ya.compareTo(yb);
+        });
+        break;
+      case WatchlistSortOrder.ratingDesc:
+        filtered.sort((a, b) {
+          final va = a.voteAverage ?? 0.0;
+          final vb = b.voteAverage ?? 0.0;
+          return vb.compareTo(va);
+        });
+        break;
+      case WatchlistSortOrder.titleAsc:
+        filtered.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -169,7 +211,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${unifiedList.length} film da guardare (Letterboxd & CinePulse)',
+                        '${unifiedList.length} film salvati',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -179,28 +221,65 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     ],
                   ),
                   const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF00E676).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF00E676).withOpacity(0.35)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.bookmark_added_rounded, color: Color(0xFF00E676), size: 16),
-                        const SizedBox(width: 5),
-                        Text(
-                          '${unifiedList.length}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF00E676),
+                  // Selettore Ordinamento
+                  PopupMenuButton<WatchlistSortOrder>(
+                    initialValue: _currentSortOrder,
+                    tooltip: 'Ordina watchlist',
+                    onSelected: (order) {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _currentSortOrder = order;
+                      });
+                    },
+                    color: AppColors.surfaceElevated,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.borderSubtle),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.sort_rounded, color: Color(0xFF00E676), size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            _currentSortOrder.label,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    itemBuilder: (context) => WatchlistSortOrder.values.map((order) {
+                      final isSel = order == _currentSortOrder;
+                      return PopupMenuItem(
+                        value: order,
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSel ? Icons.check_circle_rounded : Icons.circle_outlined,
+                              size: 16,
+                              color: isSel ? const Color(0xFF00E676) : Colors.white38,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              order.label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                                color: isSel ? const Color(0xFF00E676) : Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),

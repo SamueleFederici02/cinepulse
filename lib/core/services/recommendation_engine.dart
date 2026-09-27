@@ -266,16 +266,15 @@ class RecommendationEngine {
     List<String> requiredProviders = const [],
     int maxResults = 25,
   }) async {
-    // 1. Set dei titoli visti per esclusione assoluta
-    final Set<String> watchedTitles = userMovies
-        .where((m) => !m.isInWatchlist)
-        .map((m) => _normalizeTitle(m.title))
-        .toSet();
-
-    final Set<String> watchlistTitles = userMovies
-        .where((m) => m.isInWatchlist)
-        .map((m) => _normalizeTitle(m.title))
-        .toSet();
+    // 1. Esclusione totale: film già visti E film già presenti in Watchlist (Letterboxd & CinePulse)
+    final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
+    final Set<String> excludedTitles = {
+      ...userMovies.map((m) => _normalizeTitle(m.title)),
+      ...localWatchlist.map((m) => _normalizeTitle(m.title)),
+    };
+    final Set<int> excludedTmdbIds = {
+      ...localWatchlist.map((m) => m.id),
+    };
 
     final Map<int, TmdbMovie> candidates = {};
     final Map<int, String> candidateReasons = {};
@@ -286,7 +285,7 @@ class RecommendationEngine {
       try {
         final directorMovies = await _tmdbClient.getMoviesByDirector(director);
         for (final m in directorMovies.take(6)) {
-          if (!_isMovieExcluded(m, watchedTitles)) {
+          if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles)) {
             candidates[m.id] = m;
             candidateReasons[m.id] = '✦ Diretto da $director, uno dei tuoi registi preferiti!';
           }
@@ -325,7 +324,7 @@ class RecommendationEngine {
           final recs = await _tmdbClient.getRecommendations(searchResult.id);
           int addedFromThisSeed = 0;
           for (final m in recs) {
-            if (!_isMovieExcluded(m, watchedTitles) && !candidates.containsKey(m.id)) {
+            if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
               candidates[m.id] = m;
               candidateReasons[m.id] = '✦ Ispirato dal tuo gradimento per "${seed.title}"';
               addedFromThisSeed++;
@@ -351,7 +350,7 @@ class RecommendationEngine {
           );
           int addedFromGenre = 0;
           for (final m in discovered) {
-            if (!_isMovieExcluded(m, watchedTitles) && !candidates.containsKey(m.id)) {
+            if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
               candidates[m.id] = m;
               candidateReasons[m.id] = '✦ Perfetto per il tuo amore per ${entry.key} (${entry.value}% dei tuoi gusti)';
               addedFromGenre++;
@@ -362,19 +361,7 @@ class RecommendationEngine {
       }
     }
 
-    // 5. CANALE WATCHLIST LETTERBOXD DELL'UTENTE
-    final watchlistCandidates = userMovies.where((m) => m.isInWatchlist).take(8).toList();
-    for (final w in watchlistCandidates) {
-      try {
-        final wInfo = await _tmdbClient.searchMovie(w.title, year: w.year);
-        if (wInfo != null && !_isMovieExcluded(wInfo, watchedTitles)) {
-          candidates[wInfo.id] = wInfo.copyWith(isInUserWatchlist: true);
-          candidateReasons[wInfo.id] = '✦ Dalla tua Watchlist di Letterboxd!';
-        }
-      } catch (_) {}
-    }
-
-    // 6. DETTAGLI COMPLETI, RATING RT E FILTER PROVIDER
+    // 5. DETTAGLI COMPLETI, RATING RT E FILTER PROVIDER
     final candidateList = candidates.values.toList();
     final List<TmdbMovie> detailedCandidates = [];
 
@@ -448,8 +435,7 @@ class RecommendationEngine {
       }
 
       // Bonus Watchlist
-      final isWatchlist = watchlistTitles.contains(_normalizeTitle(full.title)) || full.isInUserWatchlist;
-      if (isWatchlist) {
+      if (full.isInUserWatchlist) {
         score += 8.0;
       }
 
@@ -466,7 +452,7 @@ class RecommendationEngine {
         full.copyWith(
           matchScore: double.parse(finalScore.toStringAsFixed(1)),
           matchReasons: reasons.toSet().toList(),
-          isInUserWatchlist: isWatchlist,
+          isInUserWatchlist: full.isInUserWatchlist,
         ),
       );
     }
@@ -519,10 +505,15 @@ class RecommendationEngine {
     List<String> requiredProviders = const [],
     int maxResults = 18,
   }) async {
-    final Set<String> watchedTitles = userMovies
-        .where((m) => !m.isInWatchlist)
-        .map((m) => _normalizeTitle(m.title))
-        .toSet();
+    final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
+    final Set<String> excludedTitles = {
+      ...userMovies.map((m) => _normalizeTitle(m.title)),
+      ...localWatchlist.map((m) => _normalizeTitle(m.title)),
+    };
+    final Set<int> excludedTmdbIds = {
+      ...localWatchlist.map((m) => m.id),
+      ...alreadyRecommendedIds,
+    };
 
     final Map<int, TmdbMovie> candidates = {};
     final Map<int, String> candidateReasons = {};
@@ -557,8 +548,8 @@ class RecommendationEngine {
           page: page,
         );
         for (final m in discovered) {
-          if (!alreadyRecommendedIds.contains(m.id) &&
-              !_isMovieExcluded(m, watchedTitles) &&
+          if (!excludedTmdbIds.contains(m.id) &&
+              !_isMovieExcluded(m, excludedTitles) &&
               !candidates.containsKey(m.id)) {
             candidates[m.id] = m;
             final gName = AppConfig.genreMap[gId] ?? 'Cinema';
@@ -576,7 +567,7 @@ class RecommendationEngine {
         final pop = await _tmdbClient.getPopularMovies(page: page);
         for (final m in pop) {
           if (!alreadyRecommendedIds.contains(m.id) &&
-              !_isMovieExcluded(m, watchedTitles) &&
+              !_isMovieExcluded(m, excludedTitles) &&
               !candidates.containsKey(m.id)) {
             candidates[m.id] = m;
             candidateReasons[m.id] = '✦ Tra i film più visti e popolari';

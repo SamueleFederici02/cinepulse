@@ -60,7 +60,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
               ref.read(recommendationsProvider.notifier).recordWatchlist(movie);
             },
             onMarkAsWatched: () {
-              ref.read(recommendationsProvider.notifier).dismissMovie(movie.id);
+              ref.read(recommendationsProvider.notifier).markMovieAsWatched(movie);
             },
           );
         },

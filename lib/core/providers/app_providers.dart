@@ -68,12 +68,16 @@ final activeProvidersFilterProvider =
   () => ActiveProvidersFilterNotifier(),
 );
 
-// Film di Letterboxd salvati in locale
 class UserLetterboxdMoviesNotifier extends Notifier<List<LetterboxdMovie>> {
   @override
   List<LetterboxdMovie> build() => LocalStorageService.getCachedMovies();
 
   void setMovies(List<LetterboxdMovie> movies) => state = movies;
+
+  Future<void> addWatchedMovie(LetterboxdMovie movie) async {
+    await LocalStorageService.addWatchedMovie(movie);
+    state = [...state.where((m) => m.slug != movie.slug), movie];
+  }
 }
 
 final userLetterboxdMoviesProvider =
@@ -225,6 +229,32 @@ class RecommendationsAsyncNotifier extends AsyncNotifier<List<TmdbMovie>> {
     if (movie != null) {
       ref.read(watchlistProvider.notifier).addMovie(movie);
     }
+  }
+
+  Future<void> markMovieAsWatched(TmdbMovie movie) async {
+    final lm = LetterboxdMovie(
+      slug: movie.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+      title: movie.title,
+      year: int.tryParse(movie.releaseYear),
+      watchedDate: DateTime.now(),
+      posterUrl: movie.posterUrl,
+    );
+
+    // 1. Salva nei film visti CinePulse
+    await ref.read(userLetterboxdMoviesProvider.notifier).addWatchedMovie(lm);
+
+    // 2. Rimuovi dalla watchlist se c'era
+    ref.read(watchlistProvider.notifier).removeMovie(movie.id);
+
+    // 3. Rimuovi dai consigli correnti
+    await dismissMovie(movie.id);
+
+    // 4. Ricalcola profilo di gusto e preferenze generi
+    final allMovies = ref.read(userLetterboxdMoviesProvider);
+    final engine = ref.read(recommendationEngineProvider);
+    final user = ref.read(activeUserProvider) ?? 'CinePulse';
+    final newProfile = await engine.buildTasteProfile(user, allMovies);
+    ref.read(tasteProfileProvider.notifier).setProfile(newProfile);
   }
 }
 

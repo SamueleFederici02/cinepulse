@@ -74,6 +74,10 @@ class LocalStorageService {
     await _moviesBox.putAll(data);
   }
 
+  static Future<void> addWatchedMovie(LetterboxdMovie movie) async {
+    await _moviesBox.put(movie.slug, jsonEncode(movie.toJson()));
+  }
+
   static List<LetterboxdMovie> getCachedMovies() {
     try {
       final List<LetterboxdMovie> list = [];
