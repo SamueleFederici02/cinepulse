@@ -32,10 +32,50 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
   WatchlistSortOrder _currentSortOrder = WatchlistSortOrder.addedDesc;
   final TextEditingController _searchController = TextEditingController();
 
+  bool _isSyncing = false;
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _triggerLetterboxdSync() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    HapticFeedback.lightImpact();
+
+    final username = ref.read(activeUserProvider);
+    if (username != null && username.isNotEmpty && username.toLowerCase() != 'ospite') {
+      final updated = await ref.read(userLetterboxdMoviesProvider.notifier).syncRecentFromLetterboxd(username);
+      if (mounted) {
+        setState(() => _isSyncing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Color(0xFF00E676), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    updated > 0
+                        ? 'Sincronizzato: $updated modifiche da Letterboxd!'
+                        : 'Watchlist già sincronizzata con Letterboxd.',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            backgroundColor: const Color(0xFF1E2430),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } else {
+      if (mounted) setState(() => _isSyncing = false);
+    }
   }
 
   void _openDetail(TmdbMovie movie, String countryCode) {
@@ -221,6 +261,29 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                     ],
                   ),
                   const Spacer(),
+                  // Pulsante Refresh Sincronizzazione Letterboxd
+                  GestureDetector(
+                    onTap: _triggerLetterboxdSync,
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.borderSubtle),
+                      ),
+                      child: _isSyncing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF00E676),
+                              ),
+                            )
+                          : const Icon(Icons.sync_rounded, color: Color(0xFF00E676), size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // Selettore Ordinamento
                   PopupMenuButton<WatchlistSortOrder>(
                     initialValue: _currentSortOrder,
@@ -352,57 +415,68 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
 
             // Griglia / Lista Film
             Expanded(
-              child: filtered.isEmpty
-                  ? _buildEmptyState()
-                  : GridView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 0.58,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
+              child: RefreshIndicator(
+                color: const Color(0xFF00E676),
+                backgroundColor: AppColors.surfaceElevated,
+                onRefresh: _triggerLetterboxdSync,
+                child: filtered.isEmpty
+                    ? SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        child: SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.55,
+                          child: _buildEmptyState(),
+                        ),
+                      )
+                    : GridView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.58,
+                          crossAxisSpacing: 14,
+                          mainAxisSpacing: 14,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final item = filtered[index];
+                          return _WatchlistCard(
+                            item: item,
+                            countryCode: countryCode,
+                            onTap: () async {
+                              if (item.tmdbMovie != null) {
+                                _openDetail(item.tmdbMovie!, countryCode);
+                              } else {
+                                final cached = _WatchlistCardState._movieCache[item.title];
+                                if (cached != null) {
+                                  _openDetail(cached, countryCode);
+                                  return;
+                                }
+                                // Cerca il film su TMDb e apri i dettagli
+                                final tmdb = ref.read(tmdbClientProvider);
+                                final res = await tmdb.searchMovie(item.title, year: int.tryParse(item.year ?? ''));
+                                if (res != null && context.mounted) {
+                                  final full = await tmdb.getMovieDetails(res.id, countryCode: countryCode) ?? res;
+                                  if (context.mounted) _openDetail(full, countryCode);
+                                }
+                              }
+                            },
+                            onRemove: () {
+                              HapticFeedback.lightImpact();
+                              if (item.id != null) {
+                                ref.read(watchlistProvider.notifier).removeMovie(item.id!);
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Rimosso "${item.title}" dalla Watchlist'),
+                                  duration: const Duration(seconds: 1),
+                                  backgroundColor: AppColors.surfaceElevated,
+                                ),
+                              );
+                            },
+                          );
+                        },
                       ),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final item = filtered[index];
-                        return _WatchlistCard(
-                          item: item,
-                          countryCode: countryCode,
-                          onTap: () async {
-                            if (item.tmdbMovie != null) {
-                              _openDetail(item.tmdbMovie!, countryCode);
-                            } else {
-                              final cached = _WatchlistCardState._movieCache[item.title];
-                              if (cached != null) {
-                                _openDetail(cached, countryCode);
-                                return;
-                              }
-                              // Cerca il film su TMDb e apri i dettagli
-                              final tmdb = ref.read(tmdbClientProvider);
-                              final res = await tmdb.searchMovie(item.title, year: int.tryParse(item.year ?? ''));
-                              if (res != null && context.mounted) {
-                                final full = await tmdb.getMovieDetails(res.id, countryCode: countryCode) ?? res;
-                                if (context.mounted) _openDetail(full, countryCode);
-                              }
-                            }
-                          },
-                          onRemove: () {
-                            HapticFeedback.lightImpact();
-                            if (item.id != null) {
-                              ref.read(watchlistProvider.notifier).removeMovie(item.id!);
-                            }
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Rimosso "${item.title}" dalla Watchlist'),
-                                duration: const Duration(seconds: 1),
-                                backgroundColor: AppColors.surfaceElevated,
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+              ),
             ),
           ],
         ),

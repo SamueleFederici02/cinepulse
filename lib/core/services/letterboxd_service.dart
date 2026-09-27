@@ -22,6 +22,16 @@ class LetterboxdService {
     ),
   );
 
+  /// Fetch rapido del feed RSS per estrarre gli ultimi film visti/recensiti
+  Future<List<LetterboxdMovie>> fetchRecentWatchedRss(String username) async {
+    return _fetchRssFeed(username.trim().toLowerCase());
+  }
+
+  /// Fetch della watchlist pubblica attuale da Letterboxd
+  Future<List<LetterboxdMovie>> fetchCurrentWatchlist(String username) async {
+    return _fetchWatchlist(username.trim().toLowerCase());
+  }
+
   /// Sincronizza l'account Letterboxd dell'utente
   Future<List<LetterboxdMovie>> syncUserMovies(
     String username, {

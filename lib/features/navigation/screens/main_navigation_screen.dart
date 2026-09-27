@@ -25,6 +25,43 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoSyncLetterboxd();
+    });
+  }
+
+  Future<void> _autoSyncLetterboxd() async {
+    final username = ref.read(activeUserProvider);
+    if (username != null && username.isNotEmpty && username.toLowerCase() != 'ospite') {
+      final updatedCount = await ref.read(userLetterboxdMoviesProvider.notifier).syncRecentFromLetterboxd(username);
+      if (updatedCount > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.sync_rounded, color: Color(0xFF00E676), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Sincronizzato con Letterboxd: $updatedCount modifiche aggiornate!',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 3),
+            backgroundColor: const Color(0xFF1E2430),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final currentTab = ref.watch(navTabProvider);
     final bottomInset = MediaQuery.of(context).padding.bottom;

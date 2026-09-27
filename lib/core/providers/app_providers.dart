@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/letterboxd_movie.dart';
 import '../models/taste_profile.dart';
@@ -77,6 +78,117 @@ class UserLetterboxdMoviesNotifier extends Notifier<List<LetterboxdMovie>> {
   Future<void> addWatchedMovie(LetterboxdMovie movie) async {
     await LocalStorageService.addWatchedMovie(movie);
     state = [...state.where((m) => m.slug != movie.slug), movie];
+  }
+
+  /// Sincronizzazione rapida via RSS e watchlist con Letterboxd
+  Future<int> syncRecentFromLetterboxd(String username) async {
+    final clean = username.trim().toLowerCase();
+    if (clean.isEmpty || clean == 'ospite') return 0;
+
+    try {
+      final service = ref.read(letterboxdServiceProvider);
+      final results = await Future.wait([
+        service.fetchRecentWatchedRss(clean),
+        service.fetchCurrentWatchlist(clean),
+      ]);
+
+      final recentWatched = results[0];
+      final currentWatchlist = results[1];
+
+      if (recentWatched.isEmpty && currentWatchlist.isEmpty) {
+        return 0;
+      }
+
+      int modifiedCount = 0;
+      final currentList = [...state];
+      final Map<String, LetterboxdMovie> mapByTitle = {};
+
+      for (final m in currentList) {
+        mapByTitle[m.title.toLowerCase().trim()] = m;
+      }
+
+      // 1. Processa i film visti di recente estratti da Letterboxd
+      final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
+      final watchlistNotifier = ref.read(watchlistProvider.notifier);
+
+      for (final watched in recentWatched) {
+        final normTitle = watched.title.toLowerCase().trim();
+        final existing = mapByTitle[normTitle];
+
+        // Se era marcato come in watchlist o è un nuovo film visto
+        if (existing == null || existing.isInWatchlist) {
+          modifiedCount++;
+        }
+
+        final updated = LetterboxdMovie(
+          slug: watched.slug.isNotEmpty ? watched.slug : (existing?.slug ?? normTitle.replaceAll(' ', '-')),
+          title: watched.title,
+          year: watched.year ?? existing?.year,
+          rating: watched.rating ?? existing?.rating,
+          watchedDate: watched.watchedDate ?? existing?.watchedDate ?? DateTime.now(),
+          isLiked: existing?.isLiked ?? false,
+          isInWatchlist: false, // Rimosso dalla watchlist perché è visto!
+          posterUrl: watched.posterUrl ?? existing?.posterUrl,
+        );
+
+        mapByTitle[normTitle] = updated;
+
+        // Se era presente nella watchlist locale CinePulse, rimuovilo!
+        final localMatch = localWatchlist.where((m) => m.title.toLowerCase().trim() == normTitle).firstOrNull;
+        if (localMatch != null) {
+          watchlistNotifier.removeMovie(localMatch.id);
+          modifiedCount++;
+        }
+      }
+
+      // 2. Se abbiamo la watchlist aggiornata da Letterboxd
+      if (currentWatchlist.isNotEmpty) {
+        final currentWatchlistTitles = currentWatchlist.map((m) => m.title.toLowerCase().trim()).toSet();
+
+        // Se un film era in watchlist da noi ma non c'è più su Letterboxd, aggiorniamolo
+        for (final entry in mapByTitle.entries.toList()) {
+          final m = entry.value;
+          if (m.isInWatchlist && !currentWatchlistTitles.contains(entry.key)) {
+            mapByTitle[entry.key] = LetterboxdMovie(
+              slug: m.slug,
+              title: m.title,
+              year: m.year,
+              rating: m.rating,
+              watchedDate: m.watchedDate,
+              isLiked: m.isLiked,
+              isInWatchlist: false,
+              posterUrl: m.posterUrl,
+            );
+            modifiedCount++;
+          }
+        }
+
+        // Assicuriamoci che i film attuali in watchlist ci siano
+        for (final w in currentWatchlist) {
+          final normTitle = w.title.toLowerCase().trim();
+          if (!mapByTitle.containsKey(normTitle)) {
+            mapByTitle[normTitle] = w;
+            modifiedCount++;
+          }
+        }
+      }
+
+      final updatedList = mapByTitle.values.toList();
+      await LocalStorageService.saveLetterboxdMovies(updatedList);
+      state = updatedList;
+
+      // Se ci sono stati aggiornamenti, ricalcola profilo di gusto per i consigli
+      if (modifiedCount > 0) {
+        final engine = ref.read(recommendationEngineProvider);
+        final newProfile = await engine.buildTasteProfile(clean, updatedList);
+        ref.read(tasteProfileProvider.notifier).setProfile(newProfile);
+      }
+
+      return modifiedCount;
+    } catch (e) {
+      debugPrint('Errore sync recente Letterboxd: $e');
+      return 0;
+    }
   }
 }
 
