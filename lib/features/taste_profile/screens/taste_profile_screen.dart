@@ -90,6 +90,16 @@ class TasteProfileScreen extends ConsumerWidget {
       await LocalStorageService.setActiveUsername(username);
       await LocalStorageService.saveLetterboxdMovies(movies);
 
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Analisi profonda dei gusti su ${movies.length} film di @$username in corso...'),
+            backgroundColor: AppColors.surfaceElevated,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
       final profile = await recommendationEngine.buildTasteProfile(username, movies);
 
       ref.read(activeUserProvider.notifier).setUsername(username);
@@ -119,6 +129,71 @@ class TasteProfileScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _handleRecalculateTaste(BuildContext context, WidgetRef ref) async {
+    final movies = ref.read(userLetterboxdMoviesProvider);
+    if (movies.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun film sincronizzato. Importa prima il file .ZIP di Letterboxd!'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Ricalcolo profondo dell\'algoritmo su ${movies.length} film in corso...'),
+        backgroundColor: AppColors.surfaceElevated,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    final username = ref.read(activeUserProvider) ?? 'Cinefilo';
+    final recommendationEngine = ref.read(recommendationEngineProvider);
+
+    try {
+      final newProfile = await recommendationEngine.buildTasteProfile(username, movies);
+      ref.read(tasteProfileProvider.notifier).setProfile(newProfile);
+      ref.read(recommendationsProvider.notifier).loadRecommendations(forceRefresh: true);
+
+      if (context.mounted) {
+        HapticFeedback.heavyImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Profilo gusti e raccomandazioni aggiornati con successo!'),
+            backgroundColor: AppColors.primaryOrange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore ricalcolo: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  void _openSubscriptionsBottomSheet(
+    BuildContext context,
+    WidgetRef ref,
+    String countryCode,
+  ) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _SubscriptionsModalSheet(countryCode: countryCode),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasteProfile = ref.watch(tasteProfileProvider);
@@ -126,8 +201,6 @@ class TasteProfileScreen extends ConsumerWidget {
     final activeFilters = ref.watch(activeProvidersFilterProvider);
     final username = ref.watch(activeUserProvider) ?? 'Cinefilo';
     final bottomInset = MediaQuery.of(context).padding.bottom + 110;
-
-    final countryProvidersAsync = ref.watch(countryProvidersListProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -140,17 +213,8 @@ class TasteProfileScreen extends ConsumerWidget {
           if (tasteProfile != null)
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.primaryOrange),
-              tooltip: 'Ricalcola raccomandazioni',
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                ref.read(recommendationsProvider.notifier).loadRecommendations(forceRefresh: true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Ricalcolo delle raccomandazioni in corso...'),
-                    backgroundColor: AppColors.surfaceElevated,
-                  ),
-                );
-              },
+              tooltip: 'Ricalcola gusti e raccomandazioni',
+              onPressed: () => _handleRecalculateTaste(context, ref),
             ),
         ],
       ),
@@ -291,22 +355,42 @@ class TasteProfileScreen extends ConsumerWidget {
 
               const SizedBox(height: 16),
 
-              // Tasto Aggiorna/Reimporta ZIP
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: AppColors.borderSubtle),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              // Tasti Azione Rapida: Ricalcola Gusti & Reimporta ZIP
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.primaryOrange.withOpacity(0.8), width: 1.4),
+                        backgroundColor: AppColors.primaryOrange.withOpacity(0.08),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      icon: const Icon(Icons.auto_awesome, color: AppColors.primaryOrange, size: 18),
+                      label: const Text(
+                        'Ricalcola gusti',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                      onPressed: () => _handleRecalculateTaste(context, ref),
+                    ),
                   ),
-                  icon: const Icon(Icons.folder_zip_outlined, color: AppColors.primaryOrange, size: 18),
-                  label: const Text(
-                    'Aggiorna o reimporta archivio .ZIP',
-                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.borderSubtle),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      icon: const Icon(Icons.folder_zip_outlined, color: AppColors.textSecondary, size: 18),
+                      label: const Text(
+                        'Reimporta .ZIP',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      onPressed: () => _handleFileImport(context, ref),
+                    ),
                   ),
-                  onPressed: () => _handleFileImport(context, ref),
-                ),
+                ],
               ),
 
               const SizedBox(height: 28),
@@ -364,9 +448,9 @@ class TasteProfileScreen extends ConsumerWidget {
                       HapticFeedback.selectionClick();
                       LocalStorageService.setSelectedCountry(val);
                       ref.read(selectedCountryProvider.notifier).setCountry(val);
-                      ref.refresh(countryProvidersListProvider);
-                      ref.refresh(nowPlayingMoviesProvider);
-                      ref.refresh(topRatedMoviesProvider);
+                      ref.invalidate(countryProvidersListProvider);
+                      ref.invalidate(nowPlayingMoviesProvider);
+                      ref.invalidate(topRatedMoviesProvider);
                       ref.read(recommendationsProvider.notifier).loadRecommendations();
                     }
                   },
@@ -374,56 +458,13 @@ class TasteProfileScreen extends ConsumerWidget {
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
-            // FILTRO PROVIDER STREAMING (ABBONAMENTO CON LOGHI IN ORDINE A-Z)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Expanded(
-                  child: _Header(
-                    title: 'I Tuoi Abbonamenti Streaming',
-                    subtitle: 'Piattaforme disponibili (A-Z con loghi ufficiali)',
-                  ),
-                ),
-                if (activeFilters.isNotEmpty)
-                  TextButton(
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      LocalStorageService.setSelectedStreamingProviders([]);
-                      ref.read(activeProvidersFilterProvider.notifier).setProviders([]);
-                      ref.read(recommendationsProvider.notifier).loadRecommendations();
-                    },
-                    child: const Text(
-                      'Resetta',
-                      style: TextStyle(
-                        color: AppColors.primaryOrange,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            countryProvidersAsync.when(
-              loading: () => const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: CircularProgressIndicator(color: AppColors.primaryOrange, strokeWidth: 2),
-                ),
-              ),
-              error: (_, __) => _buildProvidersWrap(
-                AppConfig.getKnownProvidersForCountry(selectedCountry),
-                activeFilters,
-                ref,
-              ),
-              data: (providers) => _buildProvidersWrap(
-                providers,
-                activeFilters,
-                ref,
-              ),
+            // POPUP MODALE: I TUOI ABBONAMENTI STREAMING
+            _SubscriptionsLauncherCard(
+              countryCode: selectedCountry,
+              activeFilters: activeFilters,
+              onTap: () => _openSubscriptionsBottomSheet(context, ref, selectedCountry),
             ),
 
             if (tasteProfile != null) ...[
@@ -432,7 +473,7 @@ class TasteProfileScreen extends ConsumerWidget {
               // GUSTO CINEMATOGRAFICO (BARRE % GENERI)
               const _Header(
                 title: 'Gusto Cinematografico',
-                subtitle: 'Distribuzione statistica dei generi che guardi di più',
+                subtitle: 'Distribuzione statistica pesata dei generi che ami di più',
               ),
               const SizedBox(height: 14),
 
@@ -490,7 +531,7 @@ class TasteProfileScreen extends ConsumerWidget {
               if (tasteProfile.topDirectors.isNotEmpty) ...[
                 const _Header(
                   title: 'Registi Ricorrenti',
-                  subtitle: 'Autori più presenti nella tua storia di visioni',
+                  subtitle: 'Autori più presenti tra i tuoi film preferiti e 5 stelle',
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -618,94 +659,440 @@ class TasteProfileScreen extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildProvidersWrap(
+/// Card compatta che lancia la schermata/popup degli abbonamenti
+class _SubscriptionsLauncherCard extends StatelessWidget {
+  final String countryCode;
+  final List<String> activeFilters;
+  final VoidCallback onTap;
+
+  const _SubscriptionsLauncherCard({
+    required this.countryCode,
+    required this.activeFilters,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasFilters = activeFilters.isNotEmpty;
+    final countryName = AppConfig.supportedCountries[countryCode] ?? countryCode;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasFilters ? AppColors.primaryOrange.withOpacity(0.6) : AppColors.borderSubtle,
+            width: hasFilters ? 1.5 : 1.0,
+          ),
+          boxShadow: hasFilters
+              ? [
+                  BoxShadow(
+                    color: AppColors.primaryOrange.withOpacity(0.12),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryOrange.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.subscriptions_rounded, color: AppColors.primaryOrange, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'I Tuoi Abbonamenti Streaming',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        hasFilters
+                            ? '${activeFilters.length} piattaforme attive in $countryName'
+                            : 'Nessun filtro attivo • Mostra tutti i film',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasFilters ? AppColors.primaryOrange : AppColors.textSecondary,
+                          fontWeight: hasFilters ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: hasFilters ? AppColors.primaryOrange : Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        hasFilters ? 'Modifica' : 'Seleziona',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: hasFilters ? Colors.black : Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: hasFilters ? Colors.black : Colors.white70,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (hasFilters) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: activeFilters.take(5).map((name) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Text(
+                      name,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w600),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Modal BottomSheet per gestire gli abbonamenti streaming in modo pulito e performante
+class _SubscriptionsModalSheet extends ConsumerStatefulWidget {
+  final String countryCode;
+
+  const _SubscriptionsModalSheet({required this.countryCode});
+
+  @override
+  ConsumerState<_SubscriptionsModalSheet> createState() => _SubscriptionsModalSheetState();
+}
+
+class _SubscriptionsModalSheetState extends ConsumerState<_SubscriptionsModalSheet> {
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeFilters = ref.watch(activeProvidersFilterProvider);
+    final countryProvidersAsync = ref.watch(countryProvidersListProvider);
+    final countryName = AppConfig.supportedCountries[widget.countryCode] ?? widget.countryCode;
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Abbonamenti Streaming',
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Piattaforme attive per $countryName',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (activeFilters.isNotEmpty)
+                  TextButton(
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      LocalStorageService.setSelectedStreamingProviders([]);
+                      ref.read(activeProvidersFilterProvider.notifier).setProviders([]);
+                      ref.read(recommendationsProvider.notifier).loadRecommendations();
+                    },
+                    child: const Text(
+                      'Deseleziona tutti',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Barra di ricerca rapida
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val.trim().toLowerCase();
+                });
+              },
+              style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              decoration: InputDecoration(
+                hintText: 'Cerca piattaforma (es. Disney, RaiPlay, Prime...)',
+                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, color: AppColors.primaryOrange, size: 20),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppColors.surfaceElevated,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: AppColors.borderSubtle),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: AppColors.borderSubtle),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.primaryOrange),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Lista / Grid scrollabile dei provider
+          Expanded(
+            child: countryProvidersAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: AppColors.primaryOrange),
+              ),
+              error: (_, __) => _buildProvidersGrid(
+                AppConfig.getKnownProvidersForCountry(widget.countryCode),
+                activeFilters,
+              ),
+              data: (providers) {
+                final filtered = _searchQuery.isEmpty
+                    ? providers
+                    : providers.where((p) {
+                        final name = (p['name'] ?? '').toLowerCase();
+                        return name.contains(_searchQuery);
+                      }).toList();
+
+                return _buildProvidersGrid(filtered, activeFilters);
+              },
+            ),
+          ),
+
+          // Tasto Conferma sticky
+          Container(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated,
+              border: Border(top: BorderSide(color: AppColors.borderSubtle)),
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryOrange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.of(context).pop();
+                },
+                child: Text(
+                  activeFilters.isEmpty
+                      ? 'Mostra film su qualsiasi piattaforma'
+                      : 'Applica filtri (${activeFilters.length} selezionate)',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProvidersGrid(
     List<Map<String, String>> providers,
     List<String> activeFilters,
-    WidgetRef ref,
   ) {
     if (providers.isEmpty) {
-      return const Text(
-        'Nessun provider registrato per questa nazione.',
-        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+      return const Center(
+        child: Text(
+          'Nessuna piattaforma trovata.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+        ),
       );
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: providers.map((p) {
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      itemCount: providers.length,
+      itemBuilder: (context, index) {
+        final p = providers[index];
         final name = p['name'] ?? '';
         final logo = p['logo'] ?? '';
         final isSelected = activeFilters.any((f) => f.toLowerCase() == name.toLowerCase());
 
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            final updated = List<String>.from(activeFilters);
-            if (isSelected) {
-              updated.removeWhere((f) => f.toLowerCase() == name.toLowerCase());
-            } else {
-              updated.add(name);
-            }
-            LocalStorageService.setSelectedStreamingProviders(updated);
-            ref.read(activeProvidersFilterProvider.notifier).setProviders(updated);
-            ref.read(recommendationsProvider.notifier).loadRecommendations();
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? AppColors.primaryOrange.withOpacity(0.18)
-                  : AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isSelected ? AppColors.primaryOrange : AppColors.borderSubtle,
-                width: isSelected ? 1.5 : 1.0,
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              final updated = List<String>.from(activeFilters);
+              if (isSelected) {
+                updated.removeWhere((f) => f.toLowerCase() == name.toLowerCase());
+              } else {
+                updated.add(name);
+              }
+              LocalStorageService.setSelectedStreamingProviders(updated);
+              ref.read(activeProvidersFilterProvider.notifier).setProviders(updated);
+              ref.read(recommendationsProvider.notifier).loadRecommendations();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primaryOrange.withOpacity(0.14)
+                    : AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isSelected ? AppColors.primaryOrange : AppColors.borderSubtle,
+                  width: isSelected ? 1.5 : 1.0,
+                ),
               ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primaryOrange.withOpacity(0.25),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: logo,
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(width: 32, height: 32, color: Colors.white10),
+                      errorWidget: (_, __, ___) => const Icon(Icons.tv, size: 20, color: Colors.white70),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                        color: isSelected ? Colors.white : AppColors.textSecondary,
                       ),
-                    ]
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl: logo,
-                    width: 22,
-                    height: 22,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(width: 22, height: 22, color: Colors.white10),
-                    errorWidget: (_, __, ___) => const Icon(Icons.tv, size: 16, color: Colors.white70),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
+                  Checkbox(
+                    value: isSelected,
+                    activeColor: AppColors.primaryOrange,
+                    checkColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    onChanged: (val) {
+                      HapticFeedback.selectionClick();
+                      final updated = List<String>.from(activeFilters);
+                      if (val == true) {
+                        if (!isSelected) updated.add(name);
+                      } else {
+                        updated.removeWhere((f) => f.toLowerCase() == name.toLowerCase());
+                      }
+                      LocalStorageService.setSelectedStreamingProviders(updated);
+                      ref.read(activeProvidersFilterProvider.notifier).setProviders(updated);
+                      ref.read(recommendationsProvider.notifier).loadRecommendations();
+                    },
                   ),
-                ),
-                if (isSelected) ...[
-                  const SizedBox(width: 6),
-                  const Icon(Icons.check_circle, size: 14, color: AppColors.primaryOrange),
                 ],
-              ],
+              ),
             ),
           ),
         );
-      }).toList(),
+      },
     );
   }
 }

@@ -301,37 +301,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                             );
                           },
                         ),
-
-                        // Micro suggerimento visuale a comparsa laterale
-                        Positioned(
-                          right: 8,
-                          top: 0,
-                          bottom: 0,
-                          child: Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.arrow_drop_up, size: 16, color: AppColors.textMuted),
-                                  Text(
-                                    '${_currentIndex + 1}/${movies.length}',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.textMuted,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const Icon(Icons.arrow_drop_down, size: 16, color: AppColors.textMuted),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
                       ],
                     );
                   },

@@ -276,6 +276,20 @@ class TmdbClient {
     return [];
   }
 
+  // --- FILM SIMILI TMDb ---
+  Future<List<TmdbMovie>> getSimilarMovies(int movieId) async {
+    try {
+      final response = await _dio.get('/movie/$movieId/similar');
+      final results = response.data['results'] as List?;
+      if (results != null) {
+        return results.map((m) => TmdbMovie.fromJson(m)).toList();
+      }
+    } catch (e) {
+      debugPrint('Errore similar per $movieId: $e');
+    }
+    return [];
+  }
+
   // --- DISCOVER FILM ---
   Future<List<TmdbMovie>> discoverMovies({
     List<int>? withGenres,

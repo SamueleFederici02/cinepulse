@@ -399,13 +399,15 @@ class LetterboxdService {
   }
 
   /// Decomprime direttamente il file .ZIP esportato da Letterboxd
-  /// ed estrae automaticamente tutti i film da `ratings.csv`, `watched.csv` e `watchlist.csv`.
+  /// ed estrae automaticamente tutti i film da `ratings.csv`, `watched.csv`, `diary.csv`, `watchlist.csv` e `likes/films.csv`.
   List<LetterboxdMovie> parseLetterboxdZip(List<int> zipBytes) {
     try {
       final archive = ZipDecoder().decodeBytes(zipBytes);
       String? ratingsCsv;
       String? watchedCsv;
       String? watchlistCsv;
+      String? diaryCsv;
+      String? likesCsv;
 
       for (final file in archive) {
         if (!file.isFile) continue;
@@ -416,6 +418,10 @@ class LetterboxdService {
           watchedCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
         } else if (name.endsWith('watchlist.csv')) {
           watchlistCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
+        } else if (name.endsWith('diary.csv')) {
+          diaryCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
+        } else if (name.contains('like') && name.endsWith('.csv')) {
+          likesCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
         }
       }
 
@@ -429,7 +435,28 @@ class LetterboxdService {
         }
       }
 
-      // 2. Poi watched.csv: include tutti i film loggati (anche quelli senza voto)
+      // 2. Poi diary.csv: aggiunge film registrati nel diario e loro date/voti
+      if (diaryCsv != null) {
+        final diaryList = parseLetterboxdCsv(diaryCsv);
+        for (final m in diaryList) {
+          if (!moviesMap.containsKey(m.slug)) {
+            moviesMap[m.slug] = m;
+          } else if (m.rating != null && moviesMap[m.slug]!.rating == null) {
+            final ex = moviesMap[m.slug]!;
+            moviesMap[m.slug] = LetterboxdMovie(
+              slug: ex.slug,
+              title: ex.title,
+              year: ex.year,
+              rating: m.rating,
+              isLiked: ex.isLiked || m.isLiked,
+              isInWatchlist: ex.isInWatchlist,
+              posterUrl: ex.posterUrl,
+            );
+          }
+        }
+      }
+
+      // 3. Poi watched.csv: include tutti i film loggati (anche quelli senza voto)
       if (watchedCsv != null) {
         final watchedList = parseLetterboxdCsv(watchedCsv);
         for (final m in watchedList) {
@@ -439,7 +466,34 @@ class LetterboxdService {
         }
       }
 
-      // 3. Watchlist
+      // 4. likes/films.csv: film a cui l'utente ha messo il cuoricino
+      if (likesCsv != null) {
+        final likedList = parseLetterboxdCsv(likesCsv);
+        for (final m in likedList) {
+          if (moviesMap.containsKey(m.slug)) {
+            final ex = moviesMap[m.slug]!;
+            moviesMap[m.slug] = LetterboxdMovie(
+              slug: ex.slug,
+              title: ex.title,
+              year: ex.year,
+              rating: ex.rating,
+              isLiked: true,
+              isInWatchlist: ex.isInWatchlist,
+              posterUrl: ex.posterUrl,
+            );
+          } else {
+            moviesMap[m.slug] = LetterboxdMovie(
+              slug: m.slug,
+              title: m.title,
+              year: m.year,
+              rating: null,
+              isLiked: true,
+            );
+          }
+        }
+      }
+
+      // 5. Watchlist: film che l'utente intende guardare
       if (watchlistCsv != null) {
         final watchlistList = parseLetterboxdCsv(watchlistCsv);
         for (final m in watchlistList) {

@@ -146,9 +146,9 @@ class _TinderVerticalMovieCardState extends State<TinderVerticalMovieCard>
               boxShadow: [
                 BoxShadow(
                   color: isRightSwipe
-                      ? AppColors.primaryOrange.withOpacity(0.3 * dragProgress)
+                      ? const Color(0xFF00E676).withOpacity(0.35 * dragProgress)
                       : isLeftSwipe
-                          ? Colors.redAccent.withOpacity(0.3 * dragProgress)
+                          ? Colors.redAccent.withOpacity(0.35 * dragProgress)
                           : Colors.black.withOpacity(0.6),
                   blurRadius: 28,
                   offset: const Offset(0, 12),
@@ -190,7 +190,7 @@ class _TinderVerticalMovieCardState extends State<TinderVerticalMovieCard>
                     ),
                   ),
 
-                  // TIMBRO TINDER: "WATCHLIST" (Swipe a destra)
+                  // TIMBRO TINDER: ICONA AGGIUNGI ALLA WATCHLIST VERDE (Swipe a destra)
                   if (isRightSwipe)
                     Positioned(
                       top: 40,
@@ -200,33 +200,29 @@ class _TinderVerticalMovieCardState extends State<TinderVerticalMovieCard>
                         child: Opacity(
                           opacity: dragProgress,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.primaryOrange, width: 3),
-                              color: Colors.black.withOpacity(0.6),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: const Color(0xFF00E676), width: 3.5),
+                              color: Colors.black.withOpacity(0.7),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.primaryOrange.withOpacity(0.6),
-                                  blurRadius: 20,
+                                  color: const Color(0xFF00E676).withOpacity(0.65),
+                                  blurRadius: 22,
                                 ),
                               ],
                             ),
-                            child: const Text(
-                              'WATCHLIST',
-                              style: TextStyle(
-                                color: AppColors.primaryOrange,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
-                              ),
+                            child: const Icon(
+                              Icons.bookmark_add_rounded,
+                              color: Color(0xFF00E676),
+                              size: 42,
                             ),
                           ),
                         ),
                       ),
                     ),
 
-                  // TIMBRO TINDER: "DISLIKE" (Swipe a sinistra)
+                  // TIMBRO TINDER: ICONA POLLICE IN GIÙ (Swipe a sinistra)
                   if (isLeftSwipe)
                     Positioned(
                       top: 40,
@@ -236,26 +232,22 @@ class _TinderVerticalMovieCardState extends State<TinderVerticalMovieCard>
                         child: Opacity(
                           opacity: dragProgress,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.redAccent, width: 3),
-                              color: Colors.black.withOpacity(0.6),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.redAccent, width: 3.5),
+                              color: Colors.black.withOpacity(0.7),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.redAccent.withOpacity(0.6),
-                                  blurRadius: 20,
+                                  color: Colors.redAccent.withOpacity(0.65),
+                                  blurRadius: 22,
                                 ),
                               ],
                             ),
-                            child: const Text(
-                              'NON INTERESSA',
-                              style: TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
-                              ),
+                            child: const Icon(
+                              Icons.thumb_down_rounded,
+                              color: Colors.redAccent,
+                              size: 42,
                             ),
                           ),
                         ),
