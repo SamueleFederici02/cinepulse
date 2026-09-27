@@ -33,6 +33,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
   late TmdbMovie _movie;
   YoutubePlayerController? _youtubeController;
   bool _isMuted = true;
+  bool _isPlaying = true;
   late bool _isInWatchlist;
 
   @override
@@ -58,6 +59,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
           loop: true,
         ),
       );
+      _isPlaying = true;
     }
   }
 
@@ -157,7 +159,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
         slivers: [
           // AppBar Collassabile con Trailer Netflix-Style o Backdrop HD
           SliverAppBar(
-            expandedHeight: 330,
+            expandedHeight: 228,
             pinned: true,
             stretch: true,
             backgroundColor: AppColors.background,
@@ -200,15 +202,14 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // 1. Video Player Trailer or Backdrop
+                  // 1. Video Player Trailer or Backdrop (16:9 esatto, non ritagliato)
                   if (_youtubeController != null)
                     Positioned.fill(
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        clipBehavior: Clip.hardEdge,
-                        child: SizedBox(
-                          width: 16,
-                          height: 9,
+                      child: Container(
+                        color: Colors.black,
+                        alignment: Alignment.center,
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
                           child: YoutubePlayer(
                             controller: _youtubeController!,
                             aspectRatio: 16 / 9,
@@ -224,35 +225,73 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       errorWidget: (_, __, ___) => Container(color: AppColors.surface),
                     ),
 
-                  // 2. Gradienti estetici per contrasto e leggibilità
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0.0, 0.45, 0.85, 1.0],
-                        colors: [
-                          Colors.black.withOpacity(0.55),
-                          Colors.transparent,
-                          AppColors.background.withOpacity(0.85),
-                          AppColors.background,
-                        ],
+                  // 2. Gradienti discreti per contrasto e leggibilità (IgnorePointer per non bloccare i tocchi)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0.0, 0.35, 0.75, 1.0],
+                            colors: [
+                              Colors.black.withOpacity(0.4),
+                              Colors.transparent,
+                              AppColors.background.withOpacity(0.6),
+                              AppColors.background,
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
 
-                  // 3. Controlli Netflix-style (Mute/Unmute & Apri Trailer) se il trailer è attivo
+                  // 3. Controlli compatti Netflix-style (Play/Pause, Mute, Apri) se trailer attivo
                   if (_youtubeController != null)
                     Positioned(
-                      bottom: 16,
-                      right: 16,
+                      bottom: 12,
+                      right: 12,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Play / Pause
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  if (_isPlaying) {
+                                    _youtubeController?.pauseVideo();
+                                    _isPlaying = false;
+                                  } else {
+                                    _youtubeController?.playVideo();
+                                    _isPlaying = true;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.75),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Icon(
+                                  _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Mute / Unmute
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
                               onTap: () {
                                 HapticFeedback.lightImpact();
                                 setState(() {
@@ -266,10 +305,10 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                                 });
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: Colors.black.withOpacity(0.75),
+                                  borderRadius: BorderRadius.circular(16),
                                   border: Border.all(color: Colors.white24),
                                 ),
                                 child: Row(
@@ -278,14 +317,14 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                                     Icon(
                                       _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
                                       color: Colors.white,
-                                      size: 16,
+                                      size: 15,
                                     ),
-                                    const SizedBox(width: 5),
+                                    const SizedBox(width: 4),
                                     Text(
-                                      _isMuted ? 'MUTED' : 'AUDIO',
+                                      _isMuted ? 'MUTE' : 'AUDIO',
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 10.5,
+                                        fontSize: 9.5,
                                         fontWeight: FontWeight.w800,
                                         letterSpacing: 0.5,
                                       ),
@@ -295,16 +334,17 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
+                          // Apri Trailer YouTube Esterno
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius: BorderRadius.circular(20),
                               onTap: () => _launchTrailer(context),
                               child: Container(
                                 padding: const EdgeInsets.all(7),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.7),
+                                  color: Colors.black.withOpacity(0.75),
                                   shape: BoxShape.circle,
                                   border: Border.all(color: Colors.white24),
                                 ),
