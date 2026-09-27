@@ -141,27 +141,8 @@ class UserLetterboxdMoviesNotifier extends Notifier<List<LetterboxdMovie>> {
         }
       }
 
-      // 2. Se abbiamo la watchlist aggiornata da Letterboxd
+      // 2. Se abbiamo la watchlist aggiornata da Letterboxd, aggiungi nuovi film o aggiorna lo stato
       if (currentWatchlist.isNotEmpty) {
-        final currentWatchlistTitles = currentWatchlist.map((m) => m.title.toLowerCase().trim()).toSet();
-
-        // Se un film era in watchlist da noi ma non c'è più su Letterboxd, aggiorniamolo
-        for (final entry in mapByTitle.entries.toList()) {
-          final m = entry.value;
-          if (m.isInWatchlist && !currentWatchlistTitles.contains(entry.key)) {
-            mapByTitle[entry.key] = LetterboxdMovie(
-              slug: m.slug,
-              title: m.title,
-              year: m.year,
-              rating: m.rating,
-              watchedDate: m.watchedDate,
-              isLiked: m.isLiked,
-              isInWatchlist: false,
-              posterUrl: m.posterUrl,
-            );
-            modifiedCount++;
-          }
-        }
 
         // Assicuriamoci che tutti i film attuali in watchlist ci siano e siano marcati isInWatchlist: true
         for (final w in currentWatchlist) {
