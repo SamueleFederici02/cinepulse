@@ -80,13 +80,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   void _handleSwipeLeft(TmdbMovie movie) {
     HapticFeedback.lightImpact();
     ref.read(recommendationsProvider.notifier).recordDislike(movie);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('👎 Scartato "${movie.title}" (preferenze aggiornate)'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: AppColors.surfaceElevated,
-      ),
-    );
   }
 
   void _handleSwipeRight(TmdbMovie movie) {

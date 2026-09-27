@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../movie_detail/screens/movie_detail_sheet.dart';
 
 enum CatalogSection {
   nowPlaying,
+  upcoming,
   topRated,
   trending,
   byGenre,
@@ -32,6 +34,13 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
   final Map<String, List<TmdbMovie>> _catalogCache = {};
   bool _isLoading = false;
   List<TmdbMovie> _currentMovies = [];
+
+  // Ricerca film specifico
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
+  String _searchQuery = '';
+  bool _isSearching = false;
+  List<TmdbMovie> _searchResults = [];
 
   final List<Map<String, dynamic>> _genrePills = [
     {'name': 'Drammatico', 'id': 18},
@@ -61,6 +70,52 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
     _loadCatalog();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _searchQuery = '';
+        _isSearching = false;
+        _searchResults = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _searchQuery = trimmed;
+      _isSearching = true;
+    });
+
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
+      final tmdb = ref.read(tmdbClientProvider);
+      final country = ref.read(selectedCountryProvider);
+      final raw = await tmdb.searchMoviesList(trimmed);
+      final detailed = await Future.wait(
+        raw.take(24).map((m) async {
+          try {
+            return await tmdb.getMovieDetails(m.id, countryCode: country) ?? m;
+          } catch (_) {
+            return m;
+          }
+        }),
+      );
+      if (mounted && _searchQuery == trimmed) {
+        setState(() {
+          _searchResults = detailed;
+          _isSearching = false;
+        });
+      }
+    });
+  }
+
   Future<void> _loadCatalog() async {
     final country = ref.read(selectedCountryProvider);
     final cacheKey = '${_activeSection.name}_${_selectedGenreId}_${_selectedDecade}_$country';
@@ -83,6 +138,9 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
       switch (_activeSection) {
         case CatalogSection.nowPlaying:
           results = await tmdb.getNowPlayingMovies();
+          break;
+        case CatalogSection.upcoming:
+          results = await tmdb.getUpcomingMovies(countryCode: country);
           break;
         case CatalogSection.topRated:
           results = await tmdb.getTopRatedMovies();
@@ -251,128 +309,226 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
               ),
             ),
 
-            // Macro-Categorie Principali (Nuovi, Top 250, Trending, Per Genere, Per Decenni)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              child: Row(
-                children: [
-                  _buildMainPill('🎬 Nuove Uscite', CatalogSection.nowPlaying),
-                  const SizedBox(width: 8),
-                  _buildMainPill('🏆 Top 250', CatalogSection.topRated),
-                  const SizedBox(width: 8),
-                  _buildMainPill('🔥 Trending', CatalogSection.trending),
-                  const SizedBox(width: 8),
-                  _buildMainPill('🎭 Per Genere', CatalogSection.byGenre),
-                  const SizedBox(width: 8),
-                  _buildMainPill('⏳ Per Decenni', CatalogSection.byDecade),
-                ],
+            // Barra di Ricerca Film Specifico
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Cerca qualsiasi film...',
+                    hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primaryOrange, size: 22),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white60, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              _onSearchChanged('');
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  ),
+                ),
               ),
             ),
 
-            // Sotto-categorie (se selezionato Genere o Decennio)
-            if (_activeSection == CatalogSection.byGenre)
+            if (_searchQuery.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'Risultati per "${_searchQuery}"',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                    const Spacer(),
+                    if (_isSearching)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                      )
+                    else
+                      Text(
+                        '${_searchResults.length} trovati',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _isSearching
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.primaryOrange))
+                    : _searchResults.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.search_off_rounded, size: 48, color: Colors.white30),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Nessun film trovato per "$_searchQuery"',
+                                  style: const TextStyle(color: AppColors.textSecondary),
+                                ),
+                              ],
+                            ),
+                          )
+                        : GridView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.58,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                            ),
+                            itemCount: _searchResults.length,
+                            itemBuilder: (context, index) {
+                              final movie = _searchResults[index];
+                              return _CatalogMovieCard(
+                                movie: movie,
+                                countryCode: countryCode,
+                                onTap: () => _openDetail(movie, countryCode),
+                              );
+                            },
+                          ),
+              ),
+            ] else ...[
+              // Macro-Categorie Principali (Nuovi, In Arrivo, Top 250, Trending, Per Genere, Per Decenni)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                 child: Row(
-                  children: _genrePills.map((g) {
-                    final isSel = _selectedGenreId == g['id'];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text(g['name'] as String),
-                        selected: isSel,
-                        onSelected: (_) {
-                          HapticFeedback.selectionClick();
-                          setState(() {
-                            _selectedGenreId = g['id'] as int;
-                          });
-                          _loadCatalog();
-                        },
-                        selectedColor: AppColors.primaryOrange,
-                        backgroundColor: AppColors.surfaceElevated,
-                        labelStyle: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                          color: isSel ? Colors.black : AppColors.textSecondary,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                  children: [
+                    _buildMainPill('🎬 Nuove Uscite', CatalogSection.nowPlaying),
+                    const SizedBox(width: 8),
+                    _buildMainPill('📅 In Arrivo', CatalogSection.upcoming),
+                    const SizedBox(width: 8),
+                    _buildMainPill('🏆 Top 250', CatalogSection.topRated),
+                    const SizedBox(width: 8),
+                    _buildMainPill('🔥 Trending', CatalogSection.trending),
+                    const SizedBox(width: 8),
+                    _buildMainPill('🎭 Per Genere', CatalogSection.byGenre),
+                    const SizedBox(width: 8),
+                    _buildMainPill('⏳ Per Decenni', CatalogSection.byDecade),
+                  ],
                 ),
               ),
 
-            if (_activeSection == CatalogSection.byDecade)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Row(
-                  children: _decadePills.map((d) {
-                    final isSel = _selectedDecade == d['value'];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text(d['label']!),
-                        selected: isSel,
-                        onSelected: (_) {
-                          HapticFeedback.selectionClick();
-                          setState(() {
-                            _selectedDecade = d['value']!;
-                          });
-                          _loadCatalog();
-                        },
-                        selectedColor: AppColors.amberFlame,
-                        backgroundColor: AppColors.surfaceElevated,
-                        labelStyle: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                          color: isSel ? Colors.black : AppColors.textSecondary,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-            const SizedBox(height: 4),
-
-            // Griglia Film
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.primaryOrange),
-                    )
-                  : _currentMovies.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Nessun film trovato per questa selezione.',
-                            style: TextStyle(color: AppColors.textMuted),
-                          ),
-                        )
-                      : GridView.builder(
-                          physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.58,
-                            crossAxisSpacing: 14,
-                            mainAxisSpacing: 14,
-                          ),
-                          itemCount: _currentMovies.length,
-                          itemBuilder: (context, index) {
-                            final movie = _currentMovies[index];
-                            return _CatalogMovieCard(
-                              movie: movie,
-                              countryCode: countryCode,
-                              onTap: () => _openDetail(movie, countryCode),
-                            );
+              // Sotto-categorie (se selezionato Genere o Decennio)
+              if (_activeSection == CatalogSection.byGenre)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  child: Row(
+                    children: _genrePills.map((g) {
+                      final isSel = _selectedGenreId == g['id'];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(g['name'] as String),
+                          selected: isSel,
+                          onSelected: (_) {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _selectedGenreId = g['id'] as int;
+                            });
+                            _loadCatalog();
                           },
+                          selectedColor: AppColors.primaryOrange,
+                          backgroundColor: AppColors.surfaceElevated,
+                          labelStyle: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                            color: isSel ? Colors.black : AppColors.textSecondary,
+                          ),
                         ),
-            ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+              if (_activeSection == CatalogSection.byDecade)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  child: Row(
+                    children: _decadePills.map((d) {
+                      final isSel = _selectedDecade == d['value'];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(d['label']!),
+                          selected: isSel,
+                          onSelected: (_) {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _selectedDecade = d['value']!;
+                            });
+                            _loadCatalog();
+                          },
+                          selectedColor: AppColors.amberFlame,
+                          backgroundColor: AppColors.surfaceElevated,
+                          labelStyle: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                            color: isSel ? Colors.black : AppColors.textSecondary,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+              const SizedBox(height: 4),
+
+              // Griglia Film
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: AppColors.primaryOrange),
+                      )
+                    : _currentMovies.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Nessun film trovato per questa selezione.',
+                              style: TextStyle(color: AppColors.textMuted),
+                            ),
+                          )
+                        : GridView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(20, 8, 20, bottomInset),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.58,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                            ),
+                            itemCount: _currentMovies.length,
+                            itemBuilder: (context, index) {
+                              final movie = _currentMovies[index];
+                              return _CatalogMovieCard(
+                                movie: movie,
+                                countryCode: countryCode,
+                                onTap: () => _openDetail(movie, countryCode),
+                              );
+                            },
+                          ),
+              ),
+            ],
           ],
         ),
       ),

@@ -409,10 +409,11 @@ class RecommendationEngine {
       }
 
       // SCORING DINAMICO DELL'AFFINITÀ
-      double score = 0.0;
+      double score = 52.0;
       final List<String> reasons = [];
 
       if (candidateReasons.containsKey(full.id)) {
+        score += 6.0;
         reasons.add(candidateReasons[full.id]!);
       }
 
@@ -422,19 +423,22 @@ class RecommendationEngine {
         final gName = AppConfig.genreMap[gId];
         if (gName != null && tasteProfile.genrePercentages.containsKey(gName)) {
           final pct = tasteProfile.genrePercentages[gName]!;
-          genrePoints += (pct * 0.40);
+          genrePoints += (pct * 0.30);
+          if (tasteProfile.topGenres.take(3).contains(gName)) {
+            genrePoints += 5.0;
+          }
         }
       }
-      score += min(40.0, genrePoints);
+      score += min(26.0, genrePoints);
 
-      // Regista ricorrente o amato (bonus 20 punti)
+      // Regista ricorrente o amato (bonus fino a 16 punti)
       if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
-        score += 20.0;
+        score += 16.0;
         reasons.add('✦ Diretto da ${full.director}');
       }
 
       // Voto critico TMDb & Rotten Tomatoes
-      score += (full.voteAverage / 10.0) * 14.0;
+      score += ((full.voteAverage - 5.0).clamp(0.0, 5.0) * 1.8);
       if (full.rottenTomatoesScore != null) {
         final rt = int.tryParse(full.rottenTomatoesScore!.replaceAll('%', ''));
         if (rt != null && rt >= 80) {
@@ -446,17 +450,17 @@ class RecommendationEngine {
       // Bonus Watchlist
       final isWatchlist = watchlistTitles.contains(_normalizeTitle(full.title)) || full.isInUserWatchlist;
       if (isWatchlist) {
-        score += 20.0;
+        score += 8.0;
       }
 
       // Bonus Streaming Provider
       if (availableFlatrate.isNotEmpty) {
-        score += 8.0;
+        score += 4.0;
         final names = full.flatrateProviders(countryCode).take(2).map((p) => p.providerName).join(', ');
         reasons.add('✦ Disponibile in streaming su $names');
       }
 
-      final finalScore = min(99.0, max(75.0, score));
+      final finalScore = score.clamp(52.0, 99.0);
 
       scoredList.add(
         full.copyWith(
@@ -612,39 +616,43 @@ class RecommendationEngine {
         if (!hasMatch) continue;
       }
 
-      double score = 0.0;
+      double score = 52.0;
       final List<String> reasons = [];
       if (candidateReasons.containsKey(full.id)) {
+        score += 6.0;
         reasons.add(candidateReasons[full.id]!);
       }
 
       for (final gId in full.genreIds) {
         final gName = AppConfig.genreMap[gId];
         if (gName != null && tasteProfile.genrePercentages.containsKey(gName)) {
-          score += (tasteProfile.genrePercentages[gName]! * 0.35);
+          score += (tasteProfile.genrePercentages[gName]! * 0.28);
+          if (tasteProfile.topGenres.take(3).contains(gName)) {
+            score += 5.0;
+          }
         }
         if (realtimeGenreBoost.containsKey(gId)) {
-          score += realtimeGenreBoost[gId]! * 3.0;
+          score += realtimeGenreBoost[gId]! * 4.0;
         }
         if (realtimeGenrePenalty.containsKey(gId)) {
-          score -= realtimeGenrePenalty[gId]! * 4.0;
+          score -= realtimeGenrePenalty[gId]! * 5.0;
         }
       }
 
       if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
-        score += 15.0;
+        score += 16.0;
         reasons.add('✦ Diretto da ${full.director}');
       }
 
-      score += (full.voteAverage / 10.0) * 12.0;
+      score += ((full.voteAverage - 5.0).clamp(0.0, 5.0) * 1.8);
 
       if (availableFlatrate.isNotEmpty) {
-        score += 8.0;
+        score += 4.0;
         final names = full.flatrateProviders(countryCode).take(2).map((p) => p.providerName).join(', ');
         reasons.add('✦ Disponibile in streaming su $names');
       }
 
-      final finalScore = min(99.0, max(73.0, score));
+      final finalScore = score.clamp(50.0, 99.0);
       scored.add(
         full.copyWith(
           matchScore: double.parse(finalScore.toStringAsFixed(1)),

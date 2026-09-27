@@ -294,6 +294,11 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                             if (item.tmdbMovie != null) {
                               _openDetail(item.tmdbMovie!, countryCode);
                             } else {
+                              final cached = _WatchlistCardState._movieCache[item.title];
+                              if (cached != null) {
+                                _openDetail(cached, countryCode);
+                                return;
+                              }
                               // Cerca il film su TMDb e apri i dettagli
                               final tmdb = ref.read(tmdbClientProvider);
                               final res = await tmdb.searchMovie(item.title, year: int.tryParse(item.year ?? ''));
@@ -421,7 +426,7 @@ class _WatchlistUnifiedItem {
   });
 }
 
-class _WatchlistCard extends StatelessWidget {
+class _WatchlistCard extends ConsumerStatefulWidget {
   final _WatchlistUnifiedItem item;
   final String countryCode;
   final VoidCallback onTap;
@@ -435,11 +440,75 @@ class _WatchlistCard extends StatelessWidget {
   });
 
   @override
+  ConsumerState<_WatchlistCard> createState() => _WatchlistCardState();
+}
+
+class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
+  static final Map<String, String?> _posterCache = {};
+  static final Map<String, TmdbMovie?> _movieCache = {};
+  bool _isFetching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDetailsIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WatchlistCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.title != widget.item.title) {
+      _fetchDetailsIfNeeded();
+    }
+  }
+
+  void _fetchDetailsIfNeeded() {
+    final title = widget.item.title;
+    if (widget.item.posterUrl != null && widget.item.posterUrl!.isNotEmpty) {
+      return;
+    }
+    if (_posterCache.containsKey(title)) {
+      return;
+    }
+    if (_isFetching) return;
+
+    _isFetching = true;
+    Future.microtask(() async {
+      try {
+        final tmdb = ref.read(tmdbClientProvider);
+        final found = await tmdb.searchMovie(title, year: int.tryParse(widget.item.year ?? ''));
+        if (found != null) {
+          final full = await tmdb.getMovieDetails(found.id, countryCode: widget.countryCode) ?? found;
+          _posterCache[title] = full.posterUrl;
+          _movieCache[title] = full;
+        } else {
+          _posterCache[title] = null;
+        }
+      } catch (_) {
+        _posterCache[title] = null;
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isFetching = false;
+          });
+        }
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final providers = item.tmdbMovie?.flatrateProviders(countryCode) ?? [];
+    final item = widget.item;
+    final cachedMovie = _movieCache[item.title];
+    final effectiveMovie = item.tmdbMovie ?? cachedMovie;
+    final effectivePosterUrl = (item.posterUrl != null && item.posterUrl!.isNotEmpty)
+        ? item.posterUrl
+        : _posterCache[item.title];
+    final providers = effectiveMovie?.flatrateProviders(widget.countryCode) ?? [];
+    final voteAvg = item.voteAverage ?? effectiveMovie?.voteAverage;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.surfaceElevated,
@@ -463,14 +532,34 @@ class _WatchlistCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (item.posterUrl != null && item.posterUrl!.isNotEmpty)
+                    if (effectivePosterUrl != null && effectivePosterUrl.isNotEmpty)
                       CachedNetworkImage(
-                        imageUrl: item.posterUrl!,
+                        imageUrl: effectivePosterUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: Colors.white10),
+                        placeholder: (_, __) => Container(
+                          color: AppColors.surface,
+                          child: const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                            ),
+                          ),
+                        ),
                         errorWidget: (_, __, ___) => Container(
                           color: AppColors.surface,
                           child: const Icon(Icons.movie, size: 36, color: Colors.white38),
+                        ),
+                      )
+                    else if (_isFetching)
+                      Container(
+                        color: AppColors.surface,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryOrange),
+                          ),
                         ),
                       )
                     else
@@ -525,7 +614,7 @@ class _WatchlistCard extends StatelessWidget {
                         top: 6,
                         right: 6,
                         child: GestureDetector(
-                          onTap: onRemove,
+                          onTap: widget.onRemove,
                           child: Container(
                             padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
@@ -592,13 +681,13 @@ class _WatchlistCard extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (item.voteAverage != null && item.voteAverage! > 0)
+                        if (voteAvg != null && voteAvg > 0)
                           Row(
                             children: [
                               const Icon(Icons.star_rounded, size: 13, color: AppColors.amberFlame),
                               const SizedBox(width: 2),
                               Text(
-                                item.voteAverage!.toStringAsFixed(1),
+                                voteAvg.toStringAsFixed(1),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,

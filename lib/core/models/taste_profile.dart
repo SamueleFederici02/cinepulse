@@ -21,6 +21,12 @@ class TasteProfile {
     required this.lastSync,
   });
 
+  List<String> get topGenres {
+    final entries = genrePercentages.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.map((e) => e.key).toList();
+  }
+
   factory TasteProfile.empty() {
     return TasteProfile(
       username: '',

@@ -72,6 +72,7 @@ class TmdbClient {
         '/movie/$movieId',
         queryParameters: {
           'append_to_response': 'credits,videos,watch/providers,external_ids',
+          'include_video_language': 'it,en,null',
         },
       );
 
@@ -103,7 +104,7 @@ class TmdbClient {
         }
       }
 
-      // Trailer YouTube
+      // Trailer YouTube (priorità trailer/teaser, poi qualsiasi video YouTube)
       String? trailerKey;
       if (data['videos'] != null && data['videos']['results'] != null) {
         final videos = data['videos']['results'] as List;
@@ -115,6 +116,14 @@ class TmdbClient {
         );
         if (ytTrailer != null) {
           trailerKey = ytTrailer['key'];
+        } else {
+          final anyYt = videos.firstWhere(
+            (v) => v['site'] == 'YouTube' && v['key'] != null,
+            orElse: () => null,
+          );
+          if (anyYt != null) {
+            trailerKey = anyYt['key'];
+          }
         }
       }
 
@@ -335,6 +344,54 @@ class TmdbClient {
       }
     } catch (e) {
       debugPrint('Errore getTrending TMDb: $e');
+    }
+    return [];
+  }
+
+  // --- FILM IN USCITA PROSSIMAMENTE (BLOCKBUSTER E NUOVI ARRIVI) ---
+  Future<List<TmdbMovie>> getUpcomingMovies({int page = 1, String countryCode = 'IT'}) async {
+    final cacheKey = 'upcoming_${countryCode}_$page';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return (_memoryCache[cacheKey] as List).cast<TmdbMovie>();
+    }
+    try {
+      final response = await _dio.get(
+        '/movie/upcoming',
+        queryParameters: {
+          'page': page,
+          'region': countryCode.toUpperCase(),
+        },
+      );
+      final results = response.data['results'] as List?;
+      if (results != null) {
+        final list = results.map((m) => TmdbMovie.fromJson(m)).toList();
+        _memoryCache[cacheKey] = list;
+        return list;
+      }
+    } catch (e) {
+      debugPrint('Errore getUpcomingMovies TMDb: $e');
+    }
+    return [];
+  }
+
+  // --- RICERCA MULTIPLA FILM PER TITOLO (SEARCH COMPLETO) ---
+  Future<List<TmdbMovie>> searchMoviesList(String query, {int page = 1}) async {
+    if (query.trim().isEmpty) return [];
+    try {
+      final response = await _dio.get(
+        '/search/movie',
+        queryParameters: {
+          'query': query.trim(),
+          'page': page,
+          'include_adult': false,
+        },
+      );
+      final results = response.data['results'] as List?;
+      if (results != null) {
+        return results.map((m) => TmdbMovie.fromJson(m)).toList();
+      }
+    } catch (e) {
+      debugPrint('Errore searchMoviesList TMDb: $e');
     }
     return [];
   }

@@ -23,19 +23,35 @@ class MovieDetailSheet extends StatelessWidget {
   });
 
   Future<void> _launchTrailer(BuildContext context) async {
-    if (movie.trailerKey == null || movie.trailerKey!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nessun trailer disponibile al momento.'),
-          backgroundColor: AppColors.surfaceElevated,
-        ),
-      );
-      return;
+    final String url;
+    if (movie.trailerKey != null && movie.trailerKey!.isNotEmpty) {
+      url = 'https://www.youtube.com/watch?v=${movie.trailerKey}';
+    } else {
+      url = 'https://www.youtube.com/results?search_query=${Uri.encodeComponent('${movie.title} official trailer')}';
     }
 
-    final uri = Uri.parse('https://www.youtube.com/watch?v=${movie.trailerKey}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final uri = Uri.parse(url);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      if (!launched) {
+        final webLaunched = await launchUrl(uri, mode: LaunchMode.inAppWebView);
+        if (!webLaunched) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      }
+    } catch (_) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Impossibile aprire il trailer: $e'),
+              backgroundColor: AppColors.surfaceElevated,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -117,10 +133,9 @@ class MovieDetailSheet extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (movie.trailerKey != null)
-                    Center(
-                      child: GestureDetector(
-                        onTap: () => _launchTrailer(context),
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => _launchTrailer(context),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
