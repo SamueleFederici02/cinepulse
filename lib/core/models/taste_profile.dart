@@ -6,6 +6,10 @@ class TasteProfile {
   final Map<String, int> genreCounts; // Nome genere -> conteggio
   final Map<String, double> genrePercentages; // Nome genere -> percentuale (0.0 - 100.0)
   final List<String> topDirectors;
+  final Map<String, int> directorFilmCounts; // Nome regista -> numero di film visti
+  final List<String> topMultiGenres; // es: "Fantascienza & Thriller"
+  final Map<String, double> multiGenrePercentages;
+  final List<String> topSubgenres; // es: "Sci-Fi Psicologico", "Neo-Noir", "Dystopia"
   final double averageRating;
   final DateTime lastSync;
 
@@ -17,6 +21,10 @@ class TasteProfile {
     required this.genreCounts,
     required this.genrePercentages,
     required this.topDirectors,
+    this.directorFilmCounts = const {},
+    this.topMultiGenres = const [],
+    this.multiGenrePercentages = const {},
+    this.topSubgenres = const [],
     required this.averageRating,
     required this.lastSync,
   });
@@ -36,6 +44,10 @@ class TasteProfile {
       genreCounts: {},
       genrePercentages: {},
       topDirectors: [],
+      directorFilmCounts: {},
+      topMultiGenres: [],
+      multiGenrePercentages: {},
+      topSubgenres: [],
       averageRating: 0.0,
       lastSync: DateTime.now(),
     );
@@ -50,6 +62,10 @@ class TasteProfile {
       'genreCounts': genreCounts,
       'genrePercentages': genrePercentages,
       'topDirectors': topDirectors,
+      'directorFilmCounts': directorFilmCounts,
+      'topMultiGenres': topMultiGenres,
+      'multiGenrePercentages': multiGenrePercentages,
+      'topSubgenres': topSubgenres,
       'averageRating': averageRating,
       'lastSync': lastSync.toIso8601String(),
     };
@@ -68,6 +84,18 @@ class TasteProfile {
         ),
       ),
       topDirectors: List<String>.from(json['topDirectors'] ?? []),
+      directorFilmCounts: Map<String, int>.from(
+        (json['directorFilmCounts'] ?? {}).map(
+          (k, v) => MapEntry(k, (v as num).toInt()),
+        ),
+      ),
+      topMultiGenres: List<String>.from(json['topMultiGenres'] ?? []),
+      multiGenrePercentages: Map<String, double>.from(
+        (json['multiGenrePercentages'] ?? {}).map(
+          (k, v) => MapEntry(k, (v as num).toDouble()),
+        ),
+      ),
+      topSubgenres: List<String>.from(json['topSubgenres'] ?? []),
       averageRating: (json['averageRating'] as num?)?.toDouble() ?? 0.0,
       lastSync: json['lastSync'] != null
           ? DateTime.parse(json['lastSync'])

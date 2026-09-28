@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/services/backup_service.dart';
 import 'core/storage/local_storage.dart';
 import 'core/theme/app_theme.dart';
 import 'features/navigation/screens/main_navigation_screen.dart';
@@ -21,6 +22,9 @@ Future<void> main() async {
 
   // Inizializza Hive e SharedPreferences
   await LocalStorageService.init();
+
+  // Verifica ed esegue l'auto-backup giornaliero a rotazione 7 giorni
+  BackupService.performAutoBackupIfNeeded();
 
   runApp(
     const ProviderScope(

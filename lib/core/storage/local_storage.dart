@@ -16,13 +16,19 @@ class LocalStorageService {
   static const String _boxDismissed = 'dismissed_movie_ids_box';
   static const String _boxFavorites = 'local_favorites_box';
   static const String _boxPosters = 'movie_posters_box';
+  static const String _boxSwipeLearning = 'swipe_learning_box';
+  static const String _boxBackups = 'cinepulse_backups_box';
 
   static late Box _moviesBox;
   static late Box _tasteBox;
   static late Box _dismissedBox;
   static late Box _favoritesBox;
   static late Box _posterBox;
+  static late Box _swipeBox;
+  static late Box _backupBox;
   static late SharedPreferences _prefs;
+
+  static Box get backupBox => _backupBox;
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -31,6 +37,8 @@ class LocalStorageService {
     _dismissedBox = await Hive.openBox(_boxDismissed);
     _favoritesBox = await Hive.openBox(_boxFavorites);
     _posterBox = await Hive.openBox(_boxPosters);
+    _swipeBox = await Hive.openBox(_boxSwipeLearning);
+    _backupBox = await Hive.openBox(_boxBackups);
     _prefs = await SharedPreferences.getInstance();
   }
 
@@ -209,5 +217,182 @@ class LocalStorageService {
       final key = title.toLowerCase().trim();
       await _posterBox.put(key, posterUrl);
     } catch (_) {}
+  }
+
+  // --- APPRENDIMENTO ADATTIVO DAGLI SWIPE (DESTRO / SINISTRO) ---
+  static Future<void> recordSwipeFeedback({
+    required List<int> genreIds,
+    String? director,
+    required bool isLike,
+  }) async {
+    try {
+      // 1. Pesi generi appresi (accumulo permanente)
+      final rawGenres = _swipeBox.get('learned_genres');
+      final Map<String, double> genreScores = rawGenres != null
+          ? Map<String, double>.from(
+              (jsonDecode(rawGenres) as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+              ),
+            )
+          : {};
+
+      for (final gId in genreIds) {
+        final key = gId.toString();
+        final current = genreScores[key] ?? 0.0;
+        final delta = isLike ? 2.5 : -1.5;
+        genreScores[key] = (current + delta).clamp(-15.0, 30.0);
+      }
+      await _swipeBox.put('learned_genres', jsonEncode(genreScores));
+
+      // 2. Pesi registi appresi (se presente)
+      if (director != null && director.trim().isNotEmpty) {
+        final cleanDirector = director.trim();
+        final rawDirectors = _swipeBox.get('learned_directors');
+        final Map<String, double> directorScores = rawDirectors != null
+            ? Map<String, double>.from(
+                (jsonDecode(rawDirectors) as Map).map(
+                  (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+                ),
+              )
+            : {};
+        final current = directorScores[cleanDirector] ?? 0.0;
+        final delta = isLike ? 4.0 : -3.0;
+        directorScores[cleanDirector] = (current + delta).clamp(-20.0, 40.0);
+        await _swipeBox.put('learned_directors', jsonEncode(directorScores));
+      }
+
+      // 3. Contatori swipe
+      final countKey = isLike ? 'swipe_right_count' : 'swipe_left_count';
+      final count = (_swipeBox.get(countKey) as int? ?? 0) + 1;
+      await _swipeBox.put(countKey, count);
+    } catch (e) {
+      debugPrint('Errore salvataggio swipe learning: $e');
+    }
+  }
+
+  static Map<int, double> getLearnedGenreScores() {
+    try {
+      final raw = _swipeBox.get('learned_genres');
+      if (raw != null) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        return map.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  static Map<String, double> getLearnedDirectorScores() {
+    try {
+      final raw = _swipeBox.get('learned_directors');
+      if (raw != null) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        return map.map((k, v) => MapEntry(k, (v as num).toDouble()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  static Map<String, int> getSwipeStats() {
+    return {
+      'swipesRight': (_swipeBox.get('swipe_right_count') as int? ?? 0),
+      'swipesLeft': (_swipeBox.get('swipe_left_count') as int? ?? 0),
+    };
+  }
+
+  // --- ESPORTAZIONE E RIPRISTINO BACKUP COMPLETO JSON ---
+  static Map<String, dynamic> exportAllDataToJson({String backupType = 'auto'}) {
+    final cachedMovies = getCachedMovies();
+    final watchlistMovies = getLocalWatchlistMovies();
+    final tasteProfile = getTasteProfile();
+    final dismissedIds = getDismissedMovieIds().toList();
+    final learnedGenres = getLearnedGenreScores();
+    final learnedDirectors = getLearnedDirectorScores();
+    final swipeStats = getSwipeStats();
+
+    return {
+      'cinepulse_backup_version': 1,
+      'app_version': '1.0.0',
+      'backup_type': backupType,
+      'created_at': DateTime.now().toIso8601String(),
+      'username': getActiveUsername() ?? 'Cinefilo',
+      'streaming_country': getSelectedCountry(),
+      'streaming_providers': getSelectedStreamingProviders(),
+      'watched_movies': cachedMovies.map((m) => m.toJson()).toList(),
+      'watchlist_movies': watchlistMovies.map((m) => m.toJson()).toList(),
+      'taste_profile': tasteProfile?.toJson(),
+      'dismissed_movie_ids': dismissedIds,
+      'learned_genres': learnedGenres.map((k, v) => MapEntry(k.toString(), v)),
+      'learned_directors': learnedDirectors,
+      'swipe_stats': swipeStats,
+    };
+  }
+
+  static Future<bool> restoreAllDataFromJson(Map<String, dynamic> data) async {
+    try {
+      if (!data.containsKey('watched_movies') && !data.containsKey('taste_profile')) {
+        return false;
+      }
+
+      // 1. Username
+      if (data['username'] != null && data['username'].toString().isNotEmpty) {
+        await setActiveUsername(data['username'].toString());
+      }
+
+      // 2. Impostazioni streaming
+      if (data['streaming_country'] != null) {
+        await setSelectedCountry(data['streaming_country'].toString());
+      }
+      if (data['streaming_providers'] is List) {
+        await setSelectedStreamingProviders(List<String>.from(data['streaming_providers']));
+      }
+
+      // 3. Film visti
+      if (data['watched_movies'] is List) {
+        final List<LetterboxdMovie> movies = (data['watched_movies'] as List)
+            .map((m) => LetterboxdMovie.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+        await saveLetterboxdMovies(movies);
+      }
+
+      // 4. Watchlist
+      if (data['watchlist_movies'] is List) {
+        for (final mRaw in (data['watchlist_movies'] as List)) {
+          final m = TmdbMovie.fromJson(Map<String, dynamic>.from(mRaw));
+          await saveWatchlistMovie(m);
+        }
+      }
+
+      // 5. Profilo di Gusto
+      if (data['taste_profile'] is Map) {
+        final profile = TasteProfile.fromJson(Map<String, dynamic>.from(data['taste_profile']));
+        await saveTasteProfile(profile);
+      }
+
+      // 6. Film scartati
+      if (data['dismissed_movie_ids'] is List) {
+        for (final id in (data['dismissed_movie_ids'] as List)) {
+          final intId = (id as num).toInt();
+          await dismissMovie(intId);
+        }
+      }
+
+      // 7. Apprendimento swipe
+      if (data['learned_genres'] is Map) {
+        await _swipeBox.put('learned_genres', jsonEncode(data['learned_genres']));
+      }
+      if (data['learned_directors'] is Map) {
+        await _swipeBox.put('learned_directors', jsonEncode(data['learned_directors']));
+      }
+      if (data['swipe_stats'] is Map) {
+        final stats = data['swipe_stats'] as Map;
+        await _swipeBox.put('swipe_right_count', stats['swipesRight'] ?? 0);
+        await _swipeBox.put('swipe_left_count', stats['swipesLeft'] ?? 0);
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Errore ripristino dati backup: $e');
+      return false;
+    }
   }
 }

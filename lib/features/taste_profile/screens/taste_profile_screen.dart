@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/models/letterboxd_movie.dart';
 import '../../../core/providers/app_providers.dart';
+import '../../../core/services/backup_service.dart';
 import '../../../core/storage/local_storage.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../movie_detail/screens/movie_detail_sheet.dart';
@@ -224,6 +226,60 @@ class TasteProfileScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _applyRestoredData(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> data,
+  ) async {
+    final success = await LocalStorageService.restoreAllDataFromJson(data);
+    if (!success) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Errore: formato backup non valido o non supportato.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    final username = LocalStorageService.getActiveUsername() ?? 'Cinefilo';
+    final movies = LocalStorageService.getCachedMovies();
+    final profile = LocalStorageService.getTasteProfile();
+    final country = LocalStorageService.getSelectedCountry();
+    final providers = LocalStorageService.getSelectedStreamingProviders();
+
+    ref.read(activeUserProvider.notifier).setUsername(username);
+    ref.read(userLetterboxdMoviesProvider.notifier).setMovies(movies);
+    ref.read(tasteProfileProvider.notifier).setProfile(profile);
+    ref.read(selectedCountryProvider.notifier).setCountry(country);
+    ref.read(activeProvidersFilterProvider.notifier).setProviders(providers);
+    ref.invalidate(watchlistProvider);
+    ref.read(recommendationsProvider.notifier).loadRecommendations(forceRefresh: true);
+
+    if (context.mounted) {
+      HapticFeedback.heavyImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎉 Backup ripristinato con successo! (${movies.length} film)'),
+          backgroundColor: AppColors.primaryOrange,
+        ),
+      );
+    }
+  }
+
+  void _showBackupManagementSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _BackupManagementSheet(
+        onRestoreData: (data) => _applyRestoredData(context, ref, data),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasteProfile = ref.watch(tasteProfileProvider);
@@ -241,6 +297,11 @@ class TasteProfileScreen extends ConsumerWidget {
           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_sync_rounded, color: AppColors.electricCyan),
+            tooltip: 'Backup & Ripristino Dati (7 giorni)',
+            onPressed: () => _showBackupManagementSheet(context, ref),
+          ),
           if (tasteProfile != null)
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.primaryOrange),
@@ -560,34 +621,89 @@ class TasteProfileScreen extends ConsumerWidget {
 
               const SizedBox(height: 30),
 
-              // REGISTI RICORRENTI
-              if (tasteProfile.topDirectors.isNotEmpty) ...[
+              // COMBINAZIONI MULTI-GENERE
+              if (tasteProfile.topMultiGenres.isNotEmpty) ...[
                 const _Header(
-                  title: 'Registi Ricorrenti',
-                  subtitle: 'Autori più presenti tra i tuoi film preferiti e 5 stelle',
+                  title: 'Combinazioni Multi-Genere',
+                  subtitle: 'Gli incroci di generi che apprezzi di più nei film',
+                ),
+                const SizedBox(height: 12),
+                ...tasteProfile.topMultiGenres.map((multi) {
+                  final pct = tasteProfile.multiGenrePercentages[multi] ?? 0.0;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              multi,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                                color: Colors.white,
+                              ),
+                            ),
+                            if (pct > 0)
+                              Text(
+                                '${pct.toStringAsFixed(1)}%',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                  color: AppColors.electricCyan,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: (pct / 100.0).clamp(0.05, 1.0),
+                            backgroundColor: Colors.white.withValues(alpha: 0.06),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              AppColors.electricCyan,
+                            ),
+                            minHeight: 7,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 28),
+              ],
+
+              // SOTTOGENERI & MICRO-TEMI
+              if (tasteProfile.topSubgenres.isNotEmpty) ...[
+                const _Header(
+                  title: 'Sottogeneri & Temi Ricorrenti',
+                  subtitle: 'Tendenze e micro-filoni rilevati dai tuoi film preferiti',
                 ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: tasteProfile.topDirectors.map((director) {
+                  children: tasteProfile.topSubgenres.map((sub) {
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceElevated,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.borderSubtle),
+                        color: AppColors.velvetPurple.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.velvetPurple.withValues(alpha: 0.35)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.movie_creation_outlined, size: 14, color: AppColors.electricCyan),
+                          const Icon(Icons.style_rounded, size: 14, color: AppColors.velvetPurple),
                           const SizedBox(width: 6),
                           Text(
-                            director,
+                            sub,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 13,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -598,6 +714,180 @@ class TasteProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 30),
               ],
+
+              // CLASSIFICA REGISTI RICORRENTI (Ordinata per numero di film visti)
+              if (tasteProfile.topDirectors.isNotEmpty) ...[
+                const _Header(
+                  title: 'Classifica Registi Ricorrenti',
+                  subtitle: 'Ordinati dal regista di cui hai visto più film (almeno 2)',
+                ),
+                const SizedBox(height: 14),
+                ...tasteProfile.topDirectors.asMap().entries.map((entry) {
+                  final rank = entry.key + 1;
+                  final director = entry.value;
+                  final count = tasteProfile.directorFilmCounts[director];
+                  final isTop3 = rank <= 3;
+                  final rankColor = rank == 1
+                      ? const Color(0xFFFFD700)
+                      : rank == 2
+                          ? const Color(0xFFC0C0C0)
+                          : rank == 3
+                              ? const Color(0xFFCD7F32)
+                              : Colors.white38;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isTop3
+                            ? rankColor.withValues(alpha: 0.4)
+                            : AppColors.borderSubtle,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: rankColor.withValues(alpha: 0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '#$rank',
+                              style: TextStyle(
+                                color: rankColor,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            director,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (count != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryOrange.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$count film',
+                              style: const TextStyle(
+                                color: AppColors.primaryOrange,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 30),
+              ],
+
+              // SCHEDA GESTIONE BACKUP & AUTO-BACKUP (7 GIORNI)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.electricCyan.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.electricCyan.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.cloud_sync_rounded,
+                            color: AppColors.electricCyan,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Backup & Ripristino Dati',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            '7gg auto',
+                            style: TextStyle(
+                              color: Color(0xFF10B981),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Auto-backup giornaliero attivo: i tuoi dati vengono protetti e conservati per 7 giorni. Puoi ripristinare uno snapshot o esportare un backup manuale JSON.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.electricCyan,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: const Icon(Icons.settings_backup_restore_rounded, size: 18),
+                        label: const Text(
+                          'Gestisci Backup & Ripristino',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                        ),
+                        onPressed: () => _showBackupManagementSheet(context, ref),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
             ],
 
             // DISCLAIMER DI CONFORMITÀ LEGALE E ATTRIBUZIONI TMDb / LETTERBOXD
@@ -1626,3 +1916,560 @@ class _WatchedHistorySheetState extends State<_WatchedHistorySheet> {
     );
   }
 }
+
+class _BackupManagementSheet extends StatefulWidget {
+  final Function(Map<String, dynamic>) onRestoreData;
+
+  const _BackupManagementSheet({required this.onRestoreData});
+
+  @override
+  State<_BackupManagementSheet> createState() => _BackupManagementSheetState();
+}
+
+class _BackupManagementSheetState extends State<_BackupManagementSheet> {
+  List<AutoBackupEntry> _autoBackups = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackups();
+  }
+
+  void _loadBackups() {
+    setState(() {
+      _autoBackups = BackupService.getAvailableAutoBackups();
+    });
+  }
+
+  String _formatDateTime(DateTime dt) {
+    const months = [
+      'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+      'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'
+    ];
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}, $hour:$min';
+  }
+
+  Future<void> _confirmAndRestoreLatest() async {
+    final latestData = BackupService.getLatestAutoBackupData();
+    if (latestData == null || _autoBackups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun auto-backup disponibile al momento.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final latest = _autoBackups.first;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF191F28),
+        title: const Text('Ripristinare ultimo backup?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text(
+          'Snapshot del ${_formatDateTime(latest.timestamp)}\n\n• Film visti: ${latest.watchedCount}\n• In Watchlist: ${latest.watchlistCount}\n• Utente: @${latest.username}\n\nI dati attuali verranno sostituiti con questo snapshot.',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annulla', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryOrange,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Ripristina Ora'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop(); // Chiude la bottom sheet
+      await widget.onRestoreData(latestData);
+    }
+  }
+
+  Future<void> _showHistoryDialog() async {
+    if (_autoBackups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessuno snapshot storico salvato finora.'),
+          backgroundColor: AppColors.surfaceElevated,
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          height: MediaQuery.of(ctx).size.height * 0.70,
+          decoration: const BoxDecoration(
+            color: Color(0xFF14171C),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    const Icon(Icons.history_rounded, color: AppColors.electricCyan, size: 22),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Storico Auto-Backup (7 Giorni)',
+                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white60, size: 20),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: AppColors.divider),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _autoBackups.length,
+                  itemBuilder: (c, idx) {
+                    final b = _autoBackups[idx];
+                    final isLatest = idx == 0;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: isLatest ? AppColors.electricCyan.withValues(alpha: 0.4) : AppColors.borderSubtle),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isLatest
+                              ? AppColors.electricCyan.withValues(alpha: 0.2)
+                              : Colors.white.withValues(alpha: 0.08),
+                          child: Icon(
+                            isLatest ? Icons.star_rounded : Icons.backup_rounded,
+                            color: isLatest ? AppColors.electricCyan : Colors.white60,
+                            size: 20,
+                          ),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(
+                              b.dateStr,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                            ),
+                            if (isLatest) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.electricCyan.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Ultimo',
+                                  style: TextStyle(color: AppColors.electricCyan, fontSize: 10, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        subtitle: Text(
+                          '${_formatDateTime(b.timestamp)} • ${b.watchedCount} film visti',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                        trailing: const Icon(Icons.restore_rounded, color: AppColors.primaryOrange, size: 22),
+                        onTap: () async {
+                          final box = LocalStorageService.backupBox;
+                          final raw = box.get(b.key);
+                          if (raw != null && raw is String) {
+                            final data = jsonDecode(raw) as Map<String, dynamic>;
+                            Navigator.of(ctx).pop();
+                            Navigator.of(context).pop();
+                            await widget.onRestoreData(data);
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleExportManual() async {
+    setState(() => _isLoading = true);
+    HapticFeedback.lightImpact();
+    final ok = await BackupService.exportManualBackup();
+    if (mounted) {
+      setState(() => _isLoading = false);
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📤 File di backup JSON generato con successo!'),
+            backgroundColor: AppColors.primaryOrange,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleImportFile() async {
+    setState(() => _isLoading = true);
+    final data = await BackupService.pickBackupFile();
+    setState(() => _isLoading = false);
+
+    if (data == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Nessun file selezionato o file JSON non compatibile.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    final username = data['username'] ?? 'Cinefilo';
+    final watched = (data['watched_movies'] as List?)?.length ?? 0;
+    final watchlist = (data['watchlist_movies'] as List?)?.length ?? 0;
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF191F28),
+        title: const Text('Importare backup JSON?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text(
+          'Rilevato backup valido per @$username\n\n• Film visti: $watched\n• Film in watchlist: $watchlist\n\nVuoi ripristinare questo stato nell\'applicazione?',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annulla', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryOrange,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Conferma e Ripristina'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop();
+      await widget.onRestoreData(data);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final hasBackups = _autoBackups.isNotEmpty;
+    final latestBackup = hasBackups ? _autoBackups.first : null;
+
+    return Container(
+      height: screenHeight * 0.78,
+      decoration: const BoxDecoration(
+        color: Color(0xFF14171C),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.electricCyan.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.cloud_sync_rounded,
+                    color: AppColors.electricCyan,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Backup & Ripristino Dati',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Auto-backup 7 giorni & file JSON manuale',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white60),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: AppColors.divider),
+
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // CARD STATO AUTO-BACKUP
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.surfaceElevated,
+                          AppColors.electricCyan.withValues(alpha: 0.08),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.electricCyan.withValues(alpha: 0.35)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF10B981),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Auto-Backup Attivo (Rotazione 7 Giorni)',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'CinePulse crea automaticamente uno snapshot giornaliero locale dei tuoi film visti, voti, watchlist, preferenze e apprendimento swipe. I backup vengono conservati per 7 giorni e poi sovrascritti.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Ultimo salvataggio:',
+                                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    latestBackup != null
+                                        ? _formatDateTime(latestBackup.timestamp)
+                                        : 'Nessun backup recente',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.electricCyan.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${_autoBackups.length}/7 salvati',
+                                  style: const TextStyle(
+                                    color: AppColors.electricCyan,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // AZIONI RIPRISTINO AUTO-BACKUP
+                  const Text(
+                    'Ripristino Snapshot Automatico',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryOrange,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.restore_page_rounded, size: 18),
+                          label: const Text('Ripristina Ultimo', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+                          onPressed: hasBackups ? _confirmAndRestoreLatest : null,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.borderSubtle),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.history_rounded, size: 18, color: AppColors.electricCyan),
+                          label: const Text('Storico 7 Giorni', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                          onPressed: hasBackups ? _showHistoryDialog : null,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // AZIONI BACKUP MANUALE JSON
+                  const Text(
+                    'Backup Manuale File JSON',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Esporta un file .json sul tuo telefono o su Drive/WhatsApp per portarlo su un altro dispositivo o conservarlo per sempre.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.primaryOrange.withValues(alpha: 0.6)),
+                            backgroundColor: AppColors.primaryOrange.withValues(alpha: 0.08),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.share_rounded, size: 18, color: AppColors.primaryOrange),
+                          label: const Text('Esporta JSON', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                          onPressed: _isLoading ? null : _handleExportManual,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.borderSubtle),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: const Icon(Icons.file_open_rounded, size: 18, color: AppColors.amberFlame),
+                          label: const Text('Importa JSON', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                          onPressed: _isLoading ? null : _handleImportFile,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

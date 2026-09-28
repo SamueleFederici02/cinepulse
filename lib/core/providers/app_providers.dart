@@ -262,6 +262,11 @@ class RecommendationsAsyncNotifier extends AsyncNotifier<List<TmdbMovie>> {
   /// Apprendimento in tempo reale quando l'utente mette Dislike (Swipe Sinistra / Pollice in giù)
   Future<void> recordDislike(TmdbMovie movie) async {
     await LocalStorageService.dismissMovie(movie.id);
+    await LocalStorageService.recordSwipeFeedback(
+      genreIds: movie.genreIds,
+      director: movie.director,
+      isLike: false,
+    );
 
     // Applica penalità real-time ai generi di questo film per non riproporli continuamente
     for (final gId in movie.genreIds) {
@@ -276,6 +281,11 @@ class RecommendationsAsyncNotifier extends AsyncNotifier<List<TmdbMovie>> {
   /// Apprendimento in tempo reale quando l'utente aggiunge in Watchlist (Swipe Destra / Bookmark)
   Future<void> recordWatchlist(TmdbMovie movie) async {
     await LocalStorageService.saveWatchlistMovie(movie);
+    await LocalStorageService.recordSwipeFeedback(
+      genreIds: movie.genreIds,
+      director: movie.director,
+      isLike: true,
+    );
     ref.read(watchlistProvider.notifier).addMovie(movie);
 
     // Applica boost real-time ai generi di questo film

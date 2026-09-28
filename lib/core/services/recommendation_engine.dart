@@ -97,6 +97,8 @@ class RecommendationEngine {
     final Map<String, double> genreWeightedScore = {};
     final Map<String, double> directorScores = {};
     final Map<String, int> directorFilmCounts = {};
+    final Map<String, int> multiGenreCounts = {};
+    final Map<String, double> multiGenreWeightedScore = {};
 
     int totalWatched = 0;
     int totalRated = 0;
@@ -192,11 +194,26 @@ class RecommendationEngine {
             tmdbInfo ??= await _tmdbClient.searchMovie(movie.title, slug: movie.slug);
 
             if (tmdbInfo != null) {
-              // Estrazione generi
+              // Estrazione generi singoli
+              final List<String> movieGenres = [];
               for (final gId in tmdbInfo.genreIds) {
-                final gName = AppConfig.genreMap[gId] ?? 'Altro';
-                genreCounts[gName] = (genreCounts[gName] ?? 0) + 1;
-                genreWeightedScore[gName] = (genreWeightedScore[gName] ?? 0.0) + finalWeight;
+                final gName = AppConfig.genreMap[gId];
+                if (gName != null) {
+                  movieGenres.add(gName);
+                  genreCounts[gName] = (genreCounts[gName] ?? 0) + 1;
+                  genreWeightedScore[gName] = (genreWeightedScore[gName] ?? 0.0) + finalWeight;
+                }
+              }
+
+              // Estrazione combinazioni multi-genere (coppie di generi co-presenti)
+              for (int a = 0; a < movieGenres.length; a++) {
+                for (int b = a + 1; b < movieGenres.length; b++) {
+                  final pair = [movieGenres[a], movieGenres[b]]..sort();
+                  final pairKey = '${pair[0]} & ${pair[1]}';
+                  multiGenreCounts[pairKey] = (multiGenreCounts[pairKey] ?? 0) + 1;
+                  multiGenreWeightedScore[pairKey] =
+                      (multiGenreWeightedScore[pairKey] ?? 0.0) + finalWeight;
+                }
               }
 
               // Per i film con voto alto, verifichiamo anche il regista da TMDb credits
@@ -234,7 +251,6 @@ class RecommendationEngine {
         genrePercentages[genre] = double.parse(pct.toStringAsFixed(1));
       });
     } else {
-      // Fallback cinefilo bilanciato incentrato sui gusti dell'utente
       genrePercentages['Drammatico'] = 32.0;
       genrePercentages['Commedia'] = 24.0;
       genrePercentages['Avventura'] = 22.0;
@@ -242,12 +258,76 @@ class RecommendationEngine {
       genrePercentages['Azione'] = 8.0;
     }
 
-    // Top registi ricorrenti: devono avere ALMENO 2 film visti dall'utente!
-    final eligibleDirectors = directorScores.entries
-        .where((e) => (directorFilmCounts[e.key] ?? 0) >= 2)
+    // Calcolo percentuali multi-genere
+    final double totalMultiScore = multiGenreWeightedScore.values.fold(0.0, (a, b) => a + b);
+    final Map<String, double> multiGenrePercentages = {};
+    if (totalMultiScore > 0) {
+      multiGenreWeightedScore.forEach((pair, score) {
+        final pct = (score / totalMultiScore) * 100.0;
+        multiGenrePercentages[pair] = double.parse(pct.toStringAsFixed(1));
+      });
+    }
+    final topMultiGenres = (multiGenreWeightedScore.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value)))
+        .take(5)
+        .map((e) => e.key)
+        .toList();
+
+    // Rilevamento sottogeneri tematici ricorrenti
+    final Set<String> detectedSubgenres = {};
+    for (final pair in multiGenreCounts.keys) {
+      if (pair.contains('Fantascienza') && (pair.contains('Mistero') || pair.contains('Thriller'))) {
+        detectedSubgenres.add('Sci-Fi Psicologico');
+      }
+      if (pair.contains('Crime') && (pair.contains('Thriller') || pair.contains('Mistero'))) {
+        detectedSubgenres.add('Neo-Noir');
+      }
+      if (pair.contains('Crime') && (pair.contains('Azione') || pair.contains('Commedia'))) {
+        detectedSubgenres.add('Heist & Caper');
+      }
+      if (pair.contains('Fantascienza') && (pair.contains('Azione') || pair.contains('Avventura'))) {
+        detectedSubgenres.add('Cyberpunk & Dystopia');
+      }
+      if (pair.contains('Drammatico') && (pair.contains('Storia') || pair.contains('Guerra'))) {
+        detectedSubgenres.add('Dramma Storico');
+      }
+      if (pair.contains('Horror') && (pair.contains('Mistero') || pair.contains('Thriller'))) {
+        detectedSubgenres.add('Horror Psicologico');
+      }
+      if (pair.contains('Avventura') && (pair.contains('Fantasy') || pair.contains('Azione'))) {
+        detectedSubgenres.add('Epic Fantasy');
+      }
+      if (pair.contains('Commedia') && pair.contains('Drammatico')) {
+        detectedSubgenres.add('Dramedy');
+      }
+      if (pair.contains('Commedia') && pair.contains('Romance')) {
+        detectedSubgenres.add('Commedia Romantica');
+      }
+      if (pair.contains('Azione') && pair.contains('Thriller')) {
+        detectedSubgenres.add('Spy Thriller');
+      }
+      if (pair.contains('Animazione') && (pair.contains('Fantasy') || pair.contains('Avventura'))) {
+        detectedSubgenres.add('Animazione d\'Autore');
+      }
+      if (pair.contains('Mistero') && pair.contains('Thriller')) {
+        detectedSubgenres.add('Whodunit & Investigativo');
+      }
+    }
+    final topSubgenres = detectedSubgenres.take(6).toList();
+
+    // CLASSIFICA REGISTI RICORRENTI: ordinata da quello di cui hai visto PIÙ FILM a quello con meno film (minimo 2 film!)
+    final eligibleDirectors = directorScores.keys
+        .where((d) => (directorFilmCounts[d] ?? 0) >= 2)
         .toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final topDirectors = eligibleDirectors.take(5).map((e) => e.key).toList();
+      ..sort((a, b) {
+        final countA = directorFilmCounts[a] ?? 0;
+        final countB = directorFilmCounts[b] ?? 0;
+        if (countB != countA) {
+          return countB.compareTo(countA); // Ordine decrescente per film visti
+        }
+        return (directorScores[b] ?? 0.0).compareTo(directorScores[a] ?? 0.0);
+      });
+    final topDirectors = eligibleDirectors.take(8).toList();
 
     final avgRating = totalRated > 0 ? (ratingSum / totalRated) : 0.0;
 
@@ -259,6 +339,10 @@ class RecommendationEngine {
       genreCounts: genreCounts,
       genrePercentages: genrePercentages,
       topDirectors: topDirectors,
+      directorFilmCounts: directorFilmCounts,
+      topMultiGenres: topMultiGenres,
+      multiGenrePercentages: multiGenrePercentages,
+      topSubgenres: topSubgenres,
       averageRating: double.parse(avgRating.toStringAsFixed(1)),
       lastSync: DateTime.now(),
     );
@@ -266,7 +350,6 @@ class RecommendationEngine {
     await LocalStorageService.saveTasteProfile(profile);
     return profile;
   }
-
   /// Genera le raccomandazioni cinematografiche intelligenti on-device con bilanciamento dinamico
   Future<List<TmdbMovie>> generateRecommendations({
     required List<LetterboxdMovie> userMovies,
@@ -278,6 +361,9 @@ class RecommendationEngine {
     // 1. Esclusione totale: film già visti, film in Watchlist e film scartati con swipe a sinistra
     final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
     final dismissedIds = LocalStorageService.getDismissedMovieIds();
+    final learnedGenres = LocalStorageService.getLearnedGenreScores();
+    final learnedDirectors = LocalStorageService.getLearnedDirectorScores();
+
     final Set<String> excludedTitles = {
       ...userMovies.map((m) => _normalizeTitle(m.title)),
       ...localWatchlist.map((m) => _normalizeTitle(m.title)),
@@ -290,22 +376,55 @@ class RecommendationEngine {
     final Map<int, TmdbMovie> candidates = {};
     final Map<int, String> candidateReasons = {};
 
-    // 2. CANALE REGISTI AMATI (Tarantino, Kubrick, ecc.)
-    // Se l'utente ha registi preferiti, cerchiamo film diretti da loro non ancora visti
-    for (final director in tasteProfile.topDirectors.take(3)) {
+    // 2. CANALE REGISTI RICORRENTI (Ordinati per numero di film visti!)
+    for (final director in tasteProfile.topDirectors.take(5)) {
       try {
         final directorMovies = await _tmdbClient.getMoviesByDirector(director);
+        final watchedCount = tasteProfile.directorFilmCounts[director];
+        final reason = (watchedCount != null && watchedCount >= 2)
+            ? '✦ Diretto da $director (hai visto $watchedCount suoi film)'
+            : '✦ Diretto da $director, uno dei tuoi registi preferiti';
         for (final m in directorMovies.take(6)) {
-          if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles)) {
+          if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
             candidates[m.id] = m;
-            candidateReasons[m.id] = '✦ Diretto da $director, uno dei tuoi registi preferiti!';
+            candidateReasons[m.id] = reason;
           }
         }
       } catch (_) {}
     }
 
-    // 3. CANALE FILM SEME DIVERSIFICATI (Non sempre gli stessi 5 film!)
-    // Peschiamo tra i film migliori dell'utente variandoli a ogni sessione
+    final randomOffset = Random().nextInt(3) + 1; // Pagine 1, 2 o 3 per proporre sempre nuovi titoli
+
+    // 3. CANALE MULTI-GENERE (Combinazioni più amate es. Fantascienza & Thriller)
+    for (final multi in tasteProfile.topMultiGenres.take(3)) {
+      final parts = multi.split(' & ');
+      if (parts.length == 2) {
+        final g1Id = AppConfig.getGenreIdByName(parts[0]);
+        final g2Id = AppConfig.getGenreIdByName(parts[1]);
+        if (g1Id != null && g2Id != null) {
+          try {
+            final multiDiscovered = await _tmdbClient.discoverMovies(
+              withGenres: [g1Id, g2Id],
+              minVote: 7.0,
+              minVoteCount: 130,
+              page: randomOffset,
+            );
+            int addedCount = 0;
+            for (final m in multiDiscovered) {
+              if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
+                candidates[m.id] = m;
+                candidateReasons[m.id] =
+                    '✦ Connubio ideale: ${parts[0]} e ${parts[1]} (${tasteProfile.multiGenrePercentages[multi] ?? 0}% dei tuoi gusti)';
+                addedCount++;
+                if (addedCount >= 4) break;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 4. CANALE FILM SEME DIVERSIFICATI (Non sempre gli stessi 5 film!)
     final highRated = userMovies.where((m) => (m.rating != null && m.rating! >= 4.0) || m.isLiked).toList();
     final pool = List<LetterboxdMovie>.from(highRated)..shuffle(Random());
 
@@ -320,7 +439,6 @@ class RecommendationEngine {
       }
     }
 
-    // Per ciascun film seme estraiamo AL MASSIMO 3 raccomandazioni (evita che 1 solo film inondi i consigli)
     for (final seed in diverseSeeds) {
       try {
         final searchResult = await _tmdbClient.searchMovie(seed.title, year: seed.year, slug: seed.slug);
@@ -332,42 +450,55 @@ class RecommendationEngine {
               candidates[m.id] = m;
               candidateReasons[m.id] = '✦ Ispirato dal tuo gradimento per "${seed.title}"';
               addedFromThisSeed++;
-              if (addedFromThisSeed >= 3) break; // TETTO MASSIMO DI 3 FILM PER SEME!
+              if (addedFromThisSeed >= 3) break;
             }
           }
         }
       } catch (_) {}
     }
 
-    // 4. CANALE DISCOVER SUI TOP GENERI DI TENDENZA ATTUALE (es. Drammatico, Avventura, Commedia)
+    // 5. CANALE DISCOVER SUI TOP GENERI & GENERI APPRESI DA SWIPE
     final sortedGenres = tasteProfile.genrePercentages.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    final randomOffset = Random().nextInt(3) + 1; // Pagine 1, 2 o 3 per proporre sempre nuovi titoli
+    final Set<int> targetGenreIds = {};
     for (final entry in sortedGenres.take(3)) {
       final gId = AppConfig.getGenreIdByName(entry.key);
-      if (gId != null) {
-        try {
-          final discovered = await _tmdbClient.discoverMovies(
-            withGenres: [gId],
-            minVote: 7.0,
-            minVoteCount: 160,
-            page: randomOffset,
-          );
-          int addedFromGenre = 0;
-          for (final m in discovered) {
-            if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
-              candidates[m.id] = m;
-              candidateReasons[m.id] = '✦ Perfetto per il tuo amore per ${entry.key} (${entry.value}% dei tuoi gusti)';
-              addedFromGenre++;
-              if (addedFromGenre >= 5) break;
-            }
+      if (gId != null) targetGenreIds.add(gId);
+    }
+    // Aggiungi generi positivamente appresi dagli swipe
+    learnedGenres.forEach((gId, score) {
+      if (score >= 2.0) targetGenreIds.add(gId);
+    });
+
+    for (final gId in targetGenreIds.take(4)) {
+      if ((learnedGenres[gId] ?? 0.0) < -4.0) continue; // Salta generi fortemente penalizzati
+
+      try {
+        final discovered = await _tmdbClient.discoverMovies(
+          withGenres: [gId],
+          minVote: 7.0,
+          minVoteCount: 160,
+          page: randomOffset,
+        );
+        int addedFromGenre = 0;
+        final gName = AppConfig.genreMap[gId] ?? 'Cinema';
+        final isSwipeBoosted = (learnedGenres[gId] ?? 0) >= 2.0;
+
+        for (final m in discovered) {
+          if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
+            candidates[m.id] = m;
+            candidateReasons[m.id] = isSwipeBoosted
+                ? '✦ Consigliato in base ai tuoi swipe recenti ($gName)'
+                : '✦ Perfetto per il tuo amore per $gName';
+            addedFromGenre++;
+            if (addedFromGenre >= 5) break;
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
     }
 
-    // 5. DETTAGLI COMPLETI, RATING RT E FILTER PROVIDER
+    // 6. DETTAGLI COMPLETI, RATING RT E FILTER PROVIDER
     final candidateList = candidates.values.toList();
     final List<TmdbMovie> detailedCandidates = [];
 
@@ -410,7 +541,7 @@ class RecommendationEngine {
         reasons.add(candidateReasons[full.id]!);
       }
 
-      // Match Generi con la curva attuale
+      // Match Generi con la curva statistica
       double genrePoints = 0.0;
       for (final gId in full.genreIds) {
         final gName = AppConfig.genreMap[gId];
@@ -424,11 +555,56 @@ class RecommendationEngine {
       }
       score += min(26.0, genrePoints);
 
-      // Regista ricorrente o amato (bonus fino a 16 punti)
-      if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
-        score += 16.0;
-        reasons.add('✦ Diretto da ${full.director}');
+      // Bonus Multi-Genere: film con coppie di generi preferiti
+      final movieGenreNames = full.genreIds
+          .map((id) => AppConfig.genreMap[id])
+          .whereType<String>()
+          .toList();
+      for (int a = 0; a < movieGenreNames.length; a++) {
+        for (int b = a + 1; b < movieGenreNames.length; b++) {
+          final pair = [movieGenreNames[a], movieGenreNames[b]]..sort();
+          final pairKey = '${pair[0]} & ${pair[1]}';
+          if (tasteProfile.topMultiGenres.contains(pairKey)) {
+            score += 8.0;
+            reasons.add('✦ Combinazione $pairKey');
+            break;
+          }
+        }
       }
+
+      // Bonus Regista Ricorrente (bonus prioritario da 14 a 20 punti)
+      if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
+        final dirIndex = tasteProfile.topDirectors.indexOf(full.director!);
+        final dirBonus = dirIndex == 0 ? 20.0 : (dirIndex < 3 ? 17.0 : 14.0);
+        score += dirBonus;
+        final count = tasteProfile.directorFilmCounts[full.director!];
+        reasons.add(count != null && count >= 2
+            ? '✦ Diretto da ${full.director} ($count film visti)'
+            : '✦ Diretto da ${full.director}');
+      }
+
+      // Apprendimento permanente dagli swipe (destra e sinistra)
+      double swipeBonus = 0.0;
+      for (final gId in full.genreIds) {
+        final learnedG = learnedGenres[gId] ?? 0.0;
+        if (learnedG > 0) {
+          swipeBonus += min(8.0, learnedG * 1.5);
+        } else if (learnedG < 0) {
+          swipeBonus += max(-12.0, learnedG * 1.8);
+        }
+      }
+      if (full.director != null && learnedDirectors.containsKey(full.director!)) {
+        final dLearned = learnedDirectors[full.director!]!;
+        if (dLearned > 0) {
+          swipeBonus += min(14.0, dLearned * 2.2);
+        } else {
+          swipeBonus += max(-15.0, dLearned * 2.5);
+        }
+      }
+      if (swipeBonus >= 3.5) {
+        reasons.add('✦ Consigliato in base ai tuoi swipe recenti');
+      }
+      score += swipeBonus;
 
       // Voto critico TMDb & Rotten Tomatoes
       score += ((full.voteAverage - 5.0).clamp(0.0, 5.0) * 1.8);
@@ -463,19 +639,16 @@ class RecommendationEngine {
       );
     }
 
-    // 7. BILANCIAMENTO FINALE E DIVERSIFICAZIONE (TETTO PER GENERE)
-    // Nessun genere (es. Romantico) può monopolizzare più del 20% della lista!
+    // 7. BILANCIAMENTO FINALE E DIVERSIFICAZIONE
     scoredList.sort((a, b) => b.matchScore.compareTo(a.matchScore));
 
     final Map<int, int> genreCountsInFeed = {};
     final List<TmdbMovie> diverseFeed = [];
 
     for (final movie in scoredList) {
-      // Se è il genere Romance (ID 10749) e ne abbiamo già inseriti 2, saltiamo a meno che non sia in watchlist
       bool isOverRepresented = false;
       for (final gId in movie.genreIds) {
         final currentCount = genreCountsInFeed[gId] ?? 0;
-        // Tetto di max 5 film per generi secondari, max 8 per generi primari
         if (gId == 10749 && currentCount >= 2 && !movie.isInUserWatchlist) {
           isOverRepresented = true;
           break;
@@ -499,7 +672,7 @@ class RecommendationEngine {
     return diverseFeed.isNotEmpty ? diverseFeed : scoredList.take(maxResults).toList();
   }
 
-  /// Genera raccomandazioni successive per lo scroll infinito con apprendimento real-time
+  /// Genera raccomandazioni successive per lo scroll infinito con apprendimento real-time e registi
   Future<List<TmdbMovie>> generateNextPageRecommendations({
     required List<LetterboxdMovie> userMovies,
     required TasteProfile tasteProfile,
@@ -513,6 +686,9 @@ class RecommendationEngine {
   }) async {
     final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
     final dismissedIds = LocalStorageService.getDismissedMovieIds();
+    final learnedGenres = LocalStorageService.getLearnedGenreScores();
+    final learnedDirectors = LocalStorageService.getLearnedDirectorScores();
+
     final Set<String> excludedTitles = {
       ...userMovies.map((m) => _normalizeTitle(m.title)),
       ...localWatchlist.map((m) => _normalizeTitle(m.title)),
@@ -526,11 +702,24 @@ class RecommendationEngine {
     final Map<int, TmdbMovie> candidates = {};
     final Map<int, String> candidateReasons = {};
 
-    // 1. Discover TMDb sulla pagina successiva per i generi preferiti o boosted
+    // 1. Canale Registi Ricorrenti per pagine successive
+    for (final director in tasteProfile.topDirectors.skip((page - 1) % 3).take(2)) {
+      try {
+        final directorMovies = await _tmdbClient.getMoviesByDirector(director);
+        for (final m in directorMovies.take(5)) {
+          if (!excludedTmdbIds.contains(m.id) && !_isMovieExcluded(m, excludedTitles) && !candidates.containsKey(m.id)) {
+            candidates[m.id] = m;
+            candidateReasons[m.id] = '✦ Diretto da $director, uno dei tuoi registi preferiti';
+            if (candidates.length >= 8) break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Discover TMDb per generi preferiti o boosted da swipe
     final sortedGenres = tasteProfile.genrePercentages.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    // Se un genere è stato boostato in tempo reale (per swipe right), lo includiamo
     List<int> targetGenres = [];
     realtimeGenreBoost.forEach((gId, boost) {
       if (boost > 0 && !targetGenres.contains(gId)) {
@@ -547,6 +736,7 @@ class RecommendationEngine {
 
     for (final gId in targetGenres.take(3)) {
       if ((realtimeGenrePenalty[gId] ?? 0.0) >= 3.0) continue;
+      if ((learnedGenres[gId] ?? 0.0) < -4.0) continue;
 
       try {
         final discovered = await _tmdbClient.discoverMovies(
@@ -561,7 +751,7 @@ class RecommendationEngine {
               !candidates.containsKey(m.id)) {
             candidates[m.id] = m;
             final gName = AppConfig.genreMap[gId] ?? 'Cinema';
-            candidateReasons[m.id] = (realtimeGenreBoost[gId] ?? 0) > 0
+            candidateReasons[m.id] = (realtimeGenreBoost[gId] ?? 0) > 0 || (learnedGenres[gId] ?? 0) > 1.5
                 ? '✦ Basato sui tuoi recenti film aggiunti in Watchlist ($gName)'
                 : '✦ Dal catalogo d\'eccellenza per $gName';
             if (candidates.length >= 25) break;
@@ -636,11 +826,17 @@ class RecommendationEngine {
         if (realtimeGenrePenalty.containsKey(gId)) {
           score -= realtimeGenrePenalty[gId]! * 5.0;
         }
+        if (learnedGenres.containsKey(gId)) {
+          score += learnedGenres[gId]! * 1.5;
+        }
       }
 
       if (full.director != null && tasteProfile.topDirectors.contains(full.director)) {
         score += 16.0;
         reasons.add('✦ Diretto da ${full.director}');
+      }
+      if (full.director != null && learnedDirectors.containsKey(full.director)) {
+        score += learnedDirectors[full.director]! * 2.0;
       }
 
       score += ((full.voteAverage - 5.0).clamp(0.0, 5.0) * 1.8);

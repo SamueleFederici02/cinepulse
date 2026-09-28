@@ -94,13 +94,62 @@ void main() {
           'Commedia': 10.0,
         },
         topDirectors: ['Denis Villeneuve', 'Christopher Nolan'],
+        directorFilmCounts: {
+          'Denis Villeneuve': 6,
+          'Christopher Nolan': 4,
+        },
+        topMultiGenres: ['Fantascienza & Thriller', 'Drammatico & Sci-Fi'],
+        multiGenrePercentages: {'Fantascienza & Thriller': 35.0},
+        topSubgenres: ['Sci-Fi Psicologico', 'Neo-Noir'],
         averageRating: 4.2,
         lastSync: DateTime.now(),
       );
 
       expect(profile.genrePercentages['Fantascienza'], 40.0);
       expect(profile.topDirectors.first, 'Denis Villeneuve');
+      expect(profile.directorFilmCounts['Denis Villeneuve'], 6);
+      expect(profile.topMultiGenres, contains('Fantascienza & Thriller'));
+      expect(profile.topSubgenres, contains('Sci-Fi Psicologico'));
       expect(profile.averageRating, 4.2);
+
+      final json = profile.toJson();
+      final fromJson = TasteProfile.fromJson(json);
+      expect(fromJson.directorFilmCounts['Denis Villeneuve'], 6);
+      expect(fromJson.directorFilmCounts['Christopher Nolan'], 4);
+      expect(fromJson.topMultiGenres, contains('Fantascienza & Thriller'));
+      expect(fromJson.topSubgenres, contains('Sci-Fi Psicologico'));
+    });
+
+    test('Director ranking sorts by most watched films descending', () {
+      final directorFilmCounts = {
+        'Quentin Tarantino': 6,
+        'Martin Scorsese': 2,
+        'Christopher Nolan': 4,
+        'Single Film Director': 1,
+      };
+      final directorScores = {
+        'Quentin Tarantino': 15.0,
+        'Martin Scorsese': 7.0,
+        'Christopher Nolan': 12.0,
+        'Single Film Director': 3.5,
+      };
+
+      final eligibleDirectors = directorScores.keys
+          .where((d) => (directorFilmCounts[d] ?? 0) >= 2)
+          .toList()
+        ..sort((a, b) {
+          final countA = directorFilmCounts[a] ?? 0;
+          final countB = directorFilmCounts[b] ?? 0;
+          if (countB != countA) {
+            return countB.compareTo(countA);
+          }
+          return (directorScores[b] ?? 0.0).compareTo(directorScores[a] ?? 0.0);
+        });
+
+      expect(eligibleDirectors.contains('Single Film Director'), isFalse);
+      expect(eligibleDirectors, ['Quentin Tarantino', 'Christopher Nolan', 'Martin Scorsese']);
+      expect(eligibleDirectors.first, 'Quentin Tarantino');
+      expect(directorFilmCounts[eligibleDirectors.first], 6);
     });
   });
 }
