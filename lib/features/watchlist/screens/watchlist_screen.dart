@@ -136,28 +136,36 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     final bottomInset = MediaQuery.of(context).padding.bottom + 100;
 
     // Unione e indicizzazione
-    final Set<String> cinepulseTitles = cinepulseWatchlist.map((m) => m.title.toLowerCase().trim()).toSet();
-
-    // Convertiamo i film di Letterboxd Watchlist in elementi visualizzabili
     final List<_WatchlistUnifiedItem> unifiedList = [];
+    final Set<String> seenUnifiedKeys = {};
 
     for (final m in cinepulseWatchlist) {
-      unifiedList.add(
-        _WatchlistUnifiedItem(
-          id: m.id,
-          title: m.title,
-          year: m.releaseYear.isNotEmpty ? m.releaseYear : null,
-          posterUrl: m.posterUrl,
-          tmdbMovie: m,
-          isFromCinepulse: true,
-          isFromLetterboxd: letterboxdWatchlist.any((l) => l.title.toLowerCase().trim() == m.title.toLowerCase().trim()),
-          voteAverage: m.voteAverage,
-        ),
-      );
+      final normTitle = m.title.toLowerCase().trim();
+      final key = '${m.id}_$normTitle';
+      if (!seenUnifiedKeys.contains(key) && !seenUnifiedKeys.contains(normTitle)) {
+        seenUnifiedKeys.add(key);
+        seenUnifiedKeys.add(normTitle);
+        if (m.id != null) seenUnifiedKeys.add('${m.id}');
+        unifiedList.add(
+          _WatchlistUnifiedItem(
+            id: m.id,
+            title: m.title,
+            year: m.releaseYear.isNotEmpty ? m.releaseYear : null,
+            releaseDate: m.releaseDate,
+            posterUrl: m.posterUrl,
+            tmdbMovie: m,
+            isFromCinepulse: true,
+            isFromLetterboxd: letterboxdWatchlist.any((l) => l.title.toLowerCase().trim() == normTitle),
+            voteAverage: m.voteAverage,
+          ),
+        );
+      }
     }
 
     for (final l in letterboxdWatchlist) {
-      if (!cinepulseTitles.contains(l.title.toLowerCase().trim())) {
+      final normTitle = l.title.toLowerCase().trim();
+      if (!seenUnifiedKeys.contains(normTitle)) {
+        seenUnifiedKeys.add(normTitle);
         final cached = LocalStorageService.getCachedPoster(l.title);
         final rawLPoster = l.posterUrl;
         final validLPoster = (rawLPoster != null &&
@@ -177,6 +185,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
             id: null,
             title: l.title,
             year: l.year?.toString(),
+            releaseDate: null,
             posterUrl: validLPoster ?? validCached,
             letterboxdMovie: l,
             isFromCinepulse: false,
@@ -200,8 +209,9 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       filtered = filtered.where((item) => item.isFromLetterboxd).toList();
     } else if (_activeFilterIndex == 3) {
       filtered = filtered.where((item) {
-        if (item.tmdbMovie != null) {
-          return item.tmdbMovie!.flatrateProviders(countryCode).isNotEmpty;
+        final tmdb = item.tmdbMovie ?? _WatchlistCardState._movieCache[item.title];
+        if (tmdb != null) {
+          return tmdb.flatrateProviders(countryCode).isNotEmpty;
         }
         return false;
       }).toList();
@@ -213,16 +223,22 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
         break;
       case WatchlistSortOrder.releaseDesc:
         filtered.sort((a, b) {
-          final ya = int.tryParse(a.year ?? '') ?? 0;
-          final yb = int.tryParse(b.year ?? '') ?? 0;
-          return yb.compareTo(ya);
+          final da = a.getEffectiveDate(_WatchlistCardState._movieCache);
+          final db = b.getEffectiveDate(_WatchlistCardState._movieCache);
+          if (da != null && db != null) return db.compareTo(da);
+          if (da != null) return -1;
+          if (db != null) return 1;
+          return 0;
         });
         break;
       case WatchlistSortOrder.releaseAsc:
         filtered.sort((a, b) {
-          final ya = int.tryParse(a.year ?? '') ?? 9999;
-          final yb = int.tryParse(b.year ?? '') ?? 9999;
-          return ya.compareTo(yb);
+          final da = a.getEffectiveDate(_WatchlistCardState._movieCache);
+          final db = b.getEffectiveDate(_WatchlistCardState._movieCache);
+          if (da != null && db != null) return da.compareTo(db);
+          if (da != null) return 1;
+          if (db != null) return -1;
+          return 0;
         });
         break;
       case WatchlistSortOrder.ratingDesc:
@@ -596,6 +612,7 @@ class _WatchlistUnifiedItem {
   final int? id;
   final String title;
   final String? year;
+  final String? releaseDate;
   final String? posterUrl;
   final TmdbMovie? tmdbMovie;
   final LetterboxdMovie? letterboxdMovie;
@@ -607,6 +624,7 @@ class _WatchlistUnifiedItem {
     required this.id,
     required this.title,
     this.year,
+    this.releaseDate,
     this.posterUrl,
     this.tmdbMovie,
     this.letterboxdMovie,
@@ -614,6 +632,18 @@ class _WatchlistUnifiedItem {
     required this.isFromLetterboxd,
     this.voteAverage,
   });
+
+  DateTime? getEffectiveDate(Map<String, TmdbMovie?> movieCache) {
+    final cached = movieCache[title];
+    final dateStr = releaseDate ?? tmdbMovie?.releaseDate ?? cached?.releaseDate;
+    if (dateStr != null && dateStr.isNotEmpty) {
+      final parsed = DateTime.tryParse(dateStr);
+      if (parsed != null) return parsed;
+    }
+    final y = int.tryParse(year ?? '');
+    if (y != null) return DateTime(y);
+    return null;
+  }
 }
 
 class _WatchlistCard extends ConsumerStatefulWidget {
@@ -679,32 +709,21 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
   @override
   void didUpdateWidget(covariant _WatchlistCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.item.title != widget.item.title) {
+    if (oldWidget.item.title != widget.item.title || oldWidget.countryCode != widget.countryCode) {
       _fetchDetailsIfNeeded();
     }
   }
 
   void _fetchDetailsIfNeeded() {
     final title = widget.item.title;
-    final rawPoster = widget.item.posterUrl;
-    final hasValidPoster = rawPoster != null &&
-        rawPoster.isNotEmpty &&
-        !rawPoster.contains('empty-poster') &&
-        !rawPoster.startsWith('data:image');
-    if (hasValidPoster) {
-      return;
-    }
-    // 1. Controlla prima la cache su disco permanente (Hive)
-    final cached = LocalStorageService.getCachedPoster(title);
-    if (cached != null &&
-        cached.isNotEmpty &&
-        !cached.contains('empty-poster') &&
-        !cached.startsWith('data:image')) {
-      _posterCache[title] = cached;
+
+    // Se abbiamo già l'oggetto TMDb completo con i providers
+    if (widget.item.tmdbMovie != null && widget.item.tmdbMovie!.watchProviders.isNotEmpty) {
+      _movieCache[title] = widget.item.tmdbMovie;
       return;
     }
 
-    if (_posterCache.containsKey(title) && _posterCache[title] != null) {
+    if (_movieCache.containsKey(title) && _movieCache[title] != null) {
       return;
     }
     if (_isFetching) return;
@@ -718,15 +737,19 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
           year: int.tryParse(widget.item.year ?? ''),
           slug: widget.item.letterboxdMovie?.slug,
         );
-        if (found != null && found.posterUrl.isNotEmpty) {
-          _posterCache[title] = found.posterUrl;
-          _movieCache[title] = found;
-          await LocalStorageService.setCachedPoster(title, found.posterUrl);
+        if (found != null) {
+          // Recuperiamo i dettagli completi con watch/providers per la nazione
+          final full = await tmdb.getMovieDetails(found.id, countryCode: widget.countryCode) ?? found;
+          if (full.posterUrl.isNotEmpty) {
+            _posterCache[title] = full.posterUrl;
+            await LocalStorageService.setCachedPoster(title, full.posterUrl);
+          }
+          _movieCache[title] = full;
         } else {
           _posterCache[title] = null;
         }
       } catch (_) {
-        // Nessun errore permanente: riproverà in caso di temporanea assenza di connessione
+        // Nessun errore permanente
       } finally {
         if (mounted) {
           setState(() {
@@ -752,6 +775,16 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
     final effectivePosterUrl = validItemPoster ?? _posterCache[item.title];
     final providers = effectiveMovie?.flatrateProviders(widget.countryCode) ?? [];
     final voteAvg = item.voteAverage ?? effectiveMovie?.voteAverage;
+
+    final fullDate = effectiveMovie?.releaseDate ?? item.releaseDate;
+    String displayDate = item.year ?? '';
+    if (fullDate != null && fullDate.length >= 7) {
+      try {
+        final parsed = DateTime.parse(fullDate);
+        const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+        displayDate = '${months[parsed.month - 1]} ${parsed.year}';
+      } catch (_) {}
+    }
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -922,7 +955,7 @@ class _WatchlistCardState extends ConsumerState<_WatchlistCard> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          item.year ?? '',
+                          displayDate,
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.textSecondary,

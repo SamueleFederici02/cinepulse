@@ -123,6 +123,17 @@ class LocalStorageService {
     await _dismissedBox.put(tmdbId.toString(), true);
   }
 
+  static Set<int> getDismissedMovieIds() {
+    try {
+      return _dismissedBox.keys
+          .map((k) => int.tryParse(k.toString()))
+          .whereType<int>()
+          .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
   static bool isMovieFavorited(int tmdbId) {
     return _favoritesBox.containsKey(tmdbId.toString());
   }
@@ -142,6 +153,20 @@ class LocalStorageService {
 
   static Future<void> saveWatchlistMovie(TmdbMovie movie) async {
     final key = movie.id.toString();
+    final normTitle = movie.title.toLowerCase().trim();
+    for (final existingKey in _favoritesBox.keys.toList()) {
+      if (existingKey.toString() != key) {
+        final val = _favoritesBox.get(existingKey);
+        if (val is String && val.startsWith('{')) {
+          try {
+            final old = TmdbMovie.fromJson(jsonDecode(val));
+            if (old.title.toLowerCase().trim() == normTitle) {
+              await _favoritesBox.delete(existingKey);
+            }
+          } catch (_) {}
+        }
+      }
+    }
     await _favoritesBox.put(key, jsonEncode(movie.toJson()));
   }
 
@@ -151,10 +176,17 @@ class LocalStorageService {
 
   static List<TmdbMovie> getLocalWatchlistMovies() {
     final List<TmdbMovie> list = [];
+    final Set<String> seen = {};
     for (final val in _favoritesBox.values) {
       if (val is String && val.startsWith('{')) {
         try {
-          list.add(TmdbMovie.fromJson(jsonDecode(val)));
+          final m = TmdbMovie.fromJson(jsonDecode(val));
+          final norm = m.title.toLowerCase().trim();
+          if (!seen.contains('${m.id}') && !seen.contains(norm)) {
+            seen.add('${m.id}');
+            seen.add(norm);
+            list.add(m);
+          }
         } catch (_) {}
       }
     }

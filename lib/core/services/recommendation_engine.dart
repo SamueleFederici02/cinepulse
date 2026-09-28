@@ -96,6 +96,7 @@ class RecommendationEngine {
     final Map<String, int> genreCounts = {};
     final Map<String, double> genreWeightedScore = {};
     final Map<String, double> directorScores = {};
+    final Map<String, int> directorFilmCounts = {};
 
     int totalWatched = 0;
     int totalRated = 0;
@@ -118,6 +119,7 @@ class RecommendationEngine {
       final normSlug = movie.slug.toLowerCase().replaceAll(RegExp(r'-\d{4}$'), '');
       if (_knownAuteurMap.containsKey(normSlug)) {
         final director = _knownAuteurMap[normSlug]!;
+        directorFilmCounts[director] = (directorFilmCounts[director] ?? 0) + 1;
         double dWeight = (movie.rating ?? 3.5) / 5.0 * 2.0;
         if (movie.isLiked) dWeight += 1.0;
         directorScores[director] = (directorScores[director] ?? 0.0) + dWeight;
@@ -202,8 +204,13 @@ class RecommendationEngine {
                 try {
                   final details = await _tmdbClient.getMovieDetails(tmdbInfo.id);
                   if (details?.director != null && details!.director!.isNotEmpty) {
-                    directorScores[details.director!] =
-                        (directorScores[details.director!] ?? 0.0) + finalWeight;
+                    final d = details.director!;
+                    final nSlug = movie.slug.toLowerCase().replaceAll(RegExp(r'-\d{4}$'), '');
+                    if (!_knownAuteurMap.containsKey(nSlug)) {
+                      directorFilmCounts[d] = (directorFilmCounts[d] ?? 0) + 1;
+                    }
+                    directorScores[d] =
+                        (directorScores[d] ?? 0.0) + finalWeight;
                   }
                 } catch (_) {}
               }
@@ -235,10 +242,12 @@ class RecommendationEngine {
       genrePercentages['Azione'] = 8.0;
     }
 
-    // Top registi ordinati per punteggio pesato
-    final sortedDirectors = directorScores.entries.toList()
+    // Top registi ricorrenti: devono avere ALMENO 2 film visti dall'utente!
+    final eligibleDirectors = directorScores.entries
+        .where((e) => (directorFilmCounts[e.key] ?? 0) >= 2)
+        .toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    final topDirectors = sortedDirectors.take(5).map((e) => e.key).toList();
+    final topDirectors = eligibleDirectors.take(5).map((e) => e.key).toList();
 
     final avgRating = totalRated > 0 ? (ratingSum / totalRated) : 0.0;
 
@@ -266,14 +275,16 @@ class RecommendationEngine {
     List<String> requiredProviders = const [],
     int maxResults = 25,
   }) async {
-    // 1. Esclusione totale: film già visti E film già presenti in Watchlist (Letterboxd & CinePulse)
+    // 1. Esclusione totale: film già visti, film in Watchlist e film scartati con swipe a sinistra
     final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
+    final dismissedIds = LocalStorageService.getDismissedMovieIds();
     final Set<String> excludedTitles = {
       ...userMovies.map((m) => _normalizeTitle(m.title)),
       ...localWatchlist.map((m) => _normalizeTitle(m.title)),
     };
     final Set<int> excludedTmdbIds = {
       ...localWatchlist.map((m) => m.id),
+      ...dismissedIds,
     };
 
     final Map<int, TmdbMovie> candidates = {};
@@ -293,26 +304,19 @@ class RecommendationEngine {
       } catch (_) {}
     }
 
-    // 3. CANALE FILM SEME DIVERSIFICATI (Non un solo film, ma generi diversi!)
-    // Troviamo i film migliori per generi diversi (1 Dramma, 1 Avventura, 1 Commedia, 1 Thriller, ecc.)
+    // 3. CANALE FILM SEME DIVERSIFICATI (Non sempre gli stessi 5 film!)
+    // Peschiamo tra i film migliori dell'utente variandoli a ogni sessione
     final highRated = userMovies.where((m) => (m.rating != null && m.rating! >= 4.0) || m.isLiked).toList();
-    
-    // Ordiniamo per data recente per privilegiare il trend attuale
-    highRated.sort((a, b) {
-      if (a.watchedDate != null && b.watchedDate != null) {
-        return b.watchedDate!.compareTo(a.watchedDate!);
-      }
-      return 0;
-    });
+    final pool = List<LetterboxdMovie>.from(highRated)..shuffle(Random());
 
     final List<LetterboxdMovie> diverseSeeds = [];
     final Set<String> pickedSeedTitles = {};
 
-    for (final m in highRated) {
+    for (final m in pool) {
       if (!pickedSeedTitles.contains(m.title)) {
         pickedSeedTitles.add(m.title);
         diverseSeeds.add(m);
-        if (diverseSeeds.length >= 5) break;
+        if (diverseSeeds.length >= 6) break;
       }
     }
 
@@ -339,14 +343,16 @@ class RecommendationEngine {
     final sortedGenres = tasteProfile.genrePercentages.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    final randomOffset = Random().nextInt(3) + 1; // Pagine 1, 2 o 3 per proporre sempre nuovi titoli
     for (final entry in sortedGenres.take(3)) {
       final gId = AppConfig.getGenreIdByName(entry.key);
       if (gId != null) {
         try {
           final discovered = await _tmdbClient.discoverMovies(
             withGenres: [gId],
-            minVote: 7.2,
-            minVoteCount: 200,
+            minVote: 7.0,
+            minVoteCount: 160,
+            page: randomOffset,
           );
           int addedFromGenre = 0;
           for (final m in discovered) {
@@ -506,12 +512,14 @@ class RecommendationEngine {
     int maxResults = 18,
   }) async {
     final localWatchlist = LocalStorageService.getLocalWatchlistMovies();
+    final dismissedIds = LocalStorageService.getDismissedMovieIds();
     final Set<String> excludedTitles = {
       ...userMovies.map((m) => _normalizeTitle(m.title)),
       ...localWatchlist.map((m) => _normalizeTitle(m.title)),
     };
     final Set<int> excludedTmdbIds = {
       ...localWatchlist.map((m) => m.id),
+      ...dismissedIds,
       ...alreadyRecommendedIds,
     };
 

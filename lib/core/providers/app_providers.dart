@@ -282,6 +282,11 @@ class RecommendationsAsyncNotifier extends AsyncNotifier<List<TmdbMovie>> {
     for (final gId in movie.genreIds) {
       _realtimeGenreBoost[gId] = (_realtimeGenreBoost[gId] ?? 0.0) + 2.0;
     }
+
+    // Rimuove la card dalle raccomandazioni subito dopo lo swipe a destra (proprio come con lo swipe a sinistra)
+    state.whenData((list) {
+      state = AsyncValue.data(list.where((m) => m.id != movie.id).toList());
+    });
   }
 
   /// Carica la pagina successiva di raccomandazioni (Infinite Scroll)
@@ -380,7 +385,8 @@ class WatchlistNotifier extends Notifier<List<TmdbMovie>> {
 
   void addMovie(TmdbMovie movie) {
     LocalStorageService.saveWatchlistMovie(movie);
-    final current = state.where((m) => m.id != movie.id).toList();
+    final normTitle = movie.title.toLowerCase().trim();
+    final current = state.where((m) => m.id != movie.id && m.title.toLowerCase().trim() != normTitle).toList();
     state = [movie.copyWith(isInUserWatchlist: true), ...current];
   }
 

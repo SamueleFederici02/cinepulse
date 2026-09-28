@@ -10,6 +10,7 @@ import '../../../core/models/letterboxd_movie.dart';
 import '../../../core/providers/app_providers.dart';
 import '../../../core/storage/local_storage.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../movie_detail/screens/movie_detail_sheet.dart';
 import '../../onboarding/screens/sync_profile_screen.dart';
 
 class TasteProfileScreen extends ConsumerWidget {
@@ -194,9 +195,39 @@ class TasteProfileScreen extends ConsumerWidget {
     );
   }
 
+  void _openWatchedHistory(
+    BuildContext context,
+    List<LetterboxdMovie> userMovies,
+    String countryCode,
+  ) {
+    HapticFeedback.lightImpact();
+    final watchedList = userMovies.where((m) => !m.isInWatchlist).toList();
+    watchedList.sort((a, b) {
+      if (a.watchedDate != null && b.watchedDate != null) {
+        return b.watchedDate!.compareTo(a.watchedDate!);
+      }
+      if (a.watchedDate != null) return -1;
+      if (b.watchedDate != null) return 1;
+      final ya = a.year ?? 0;
+      final yb = b.year ?? 0;
+      return yb.compareTo(ya);
+    });
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _WatchedHistorySheet(
+        movies: watchedList,
+        countryCode: countryCode,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasteProfile = ref.watch(tasteProfileProvider);
+    final userMovies = ref.watch(userLetterboxdMoviesProvider);
     final selectedCountry = ref.watch(selectedCountryProvider);
     final activeFilters = ref.watch(activeProvidersFilterProvider);
     final username = ref.watch(activeUserProvider) ?? 'Cinefilo';
@@ -315,6 +346,8 @@ class TasteProfileScreen extends ConsumerWidget {
                       value: '${tasteProfile.totalWatched}',
                       icon: Icons.movie_filter_rounded,
                       accentColor: AppColors.primaryOrange,
+                      subtitle: 'Tocca per cronologia',
+                      onTap: () => _openWatchedHistory(context, userMovies, selectedCountry),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1134,56 +1167,459 @@ class _BentoStatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color accentColor;
+  final VoidCallback? onTap;
+  final String? subtitle;
 
   const _BentoStatCard({
     required this.title,
     required this.value,
     required this.icon,
     required this.accentColor,
+    this.onTap,
+    this.subtitle,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textSecondary,
-                  letterSpacing: 0.8,
-                ),
-              ),
-              Icon(icon, size: 18, color: accentColor),
-            ],
+    return GestureDetector(
+      onTap: onTap != null
+          ? () {
+              HapticFeedback.lightImpact();
+              onTap!();
+            }
+          : null,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: onTap != null ? accentColor.withValues(alpha: 0.45) : AppColors.borderSubtle,
           ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: 0.5,
-              shadows: [
-                Shadow(
-                  color: accentColor.withOpacity(0.3),
-                  blurRadius: 8,
+          boxShadow: onTap != null
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 18, color: accentColor),
+                    if (onTap != null) ...[
+                      const SizedBox(width: 4),
+                      Icon(Icons.arrow_forward_ios_rounded, size: 10, color: accentColor),
+                    ],
+                  ],
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: 0.5,
+                shadows: [
+                  Shadow(
+                    color: accentColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                subtitle!,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: accentColor,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WatchedHistorySheet extends StatefulWidget {
+  final List<LetterboxdMovie> movies;
+  final String countryCode;
+
+  const _WatchedHistorySheet({
+    required this.movies,
+    required this.countryCode,
+  });
+
+  @override
+  State<_WatchedHistorySheet> createState() => _WatchedHistorySheetState();
+}
+
+class _WatchedHistorySheetState extends State<_WatchedHistorySheet> {
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _formatWatchedDate(DateTime? date) {
+    if (date == null) return '';
+    const months = [
+      'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+      'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  Widget _buildPosterPlaceholder(String title) {
+    return Container(
+      color: AppColors.surfaceElevated,
+      child: Center(
+        child: Text(
+          title.isNotEmpty ? title[0].toUpperCase() : '?',
+          style: const TextStyle(color: Colors.white38, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.movies.where((m) {
+      if (_searchQuery.isEmpty) return true;
+      return m.title.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Container(
+      height: screenHeight * 0.85,
+      decoration: const BoxDecoration(
+        color: Color(0xFF14171C),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        children: [
+          // Drag Handle
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryOrange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.history_rounded,
+                    color: AppColors.primaryOrange,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Cronologia Film Visti',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        '${widget.movies.length} film visti in ordine decrescente',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
+              style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              decoration: InputDecoration(
+                hintText: 'Cerca tra i film visti...',
+                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, color: AppColors.primaryOrange, size: 20),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppColors.surfaceElevated,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: AppColors.borderSubtle),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: AppColors.borderSubtle),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.primaryOrange),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // List
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _searchQuery.isNotEmpty ? Icons.search_off_rounded : Icons.movie_outlined,
+                            size: 48,
+                            color: Colors.white24,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _searchQuery.isNotEmpty
+                                ? 'Nessun film trovato per "$_searchQuery"'
+                                : 'Nessun film visto nella cronologia',
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final movie = filtered[index];
+                      final dateStr = _formatWatchedDate(movie.watchedDate);
+
+                      return GestureDetector(
+                        onTap: () async {
+                          HapticFeedback.lightImpact();
+                          final tmdb = ProviderScope.containerOf(context).read(tmdbClientProvider);
+                          final res = await tmdb.searchMovie(
+                            movie.title,
+                            year: movie.year,
+                            slug: movie.slug,
+                          );
+                          if (res != null && context.mounted) {
+                            final full = await tmdb.getMovieDetails(res.id, countryCode: widget.countryCode) ?? res;
+                            if (context.mounted) {
+                              Navigator.of(context).push(
+                                PageRouteBuilder(
+                                  opaque: false,
+                                  barrierDismissible: true,
+                                  pageBuilder: (context, _, __) => MovieDetailSheet(
+                                    movie: full,
+                                    countryCode: widget.countryCode,
+                                    onWatchlistToggle: () {},
+                                    onMarkAsWatched: () {},
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceElevated,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.borderSubtle),
+                          ),
+                          child: Row(
+                            children: [
+                              // Locandina
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: SizedBox(
+                                  width: 50,
+                                  height: 75,
+                                  child: (movie.posterUrl != null && movie.posterUrl!.isNotEmpty)
+                                      ? CachedNetworkImage(
+                                          imageUrl: movie.posterUrl!,
+                                          fit: BoxFit.cover,
+                                          errorWidget: (_, __, ___) => _buildPosterPlaceholder(movie.title),
+                                        )
+                                      : _buildPosterPlaceholder(movie.title),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+
+                              // Info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      movie.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (movie.year != null) ...[
+                                          Text(
+                                            '${movie.year}',
+                                            style: const TextStyle(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (dateStr.isNotEmpty)
+                                            const Text(
+                                              ' • ',
+                                              style: TextStyle(color: Colors.white24, fontSize: 12),
+                                            ),
+                                        ],
+                                        if (dateStr.isNotEmpty)
+                                          Text(
+                                            'Visto: $dateStr',
+                                            style: const TextStyle(
+                                              color: AppColors.primaryOrange,
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        if (movie.rating != null && movie.rating! > 0) ...[
+                                          const Icon(Icons.star_rounded, size: 14, color: AppColors.amberFlame),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            movie.rating!.toStringAsFixed(1),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                        if (movie.isLiked)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.redAccent.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: const [
+                                                Icon(Icons.favorite, size: 11, color: Colors.redAccent),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  'Preferito',
+                                                  style: TextStyle(
+                                                    color: Colors.redAccent,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.white30,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
