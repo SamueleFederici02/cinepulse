@@ -96,7 +96,7 @@ class RecommendationEngine {
     final Map<String, int> genreCounts = {};
     final Map<String, double> genreWeightedScore = {};
     final Map<String, double> directorScores = {};
-    final Map<String, int> directorFilmCounts = {};
+    final Map<String, Set<String>> directorUniqueMovies = {};
     final Map<String, int> multiGenreCounts = {};
     final Map<String, double> multiGenreWeightedScore = {};
 
@@ -121,7 +121,7 @@ class RecommendationEngine {
       final normSlug = movie.slug.toLowerCase().replaceAll(RegExp(r'-\d{4}$'), '');
       if (_knownAuteurMap.containsKey(normSlug)) {
         final director = _knownAuteurMap[normSlug]!;
-        directorFilmCounts[director] = (directorFilmCounts[director] ?? 0) + 1;
+        directorUniqueMovies.putIfAbsent(director, () => {}).add(normSlug);
         double dWeight = (movie.rating ?? 3.5) / 5.0 * 2.0;
         if (movie.isLiked) dWeight += 1.0;
         directorScores[director] = (directorScores[director] ?? 0.0) + dWeight;
@@ -222,10 +222,8 @@ class RecommendationEngine {
                   final details = await _tmdbClient.getMovieDetails(tmdbInfo.id);
                   if (details?.director != null && details!.director!.isNotEmpty) {
                     final d = details.director!;
-                    final nSlug = movie.slug.toLowerCase().replaceAll(RegExp(r'-\d{4}$'), '');
-                    if (!_knownAuteurMap.containsKey(nSlug)) {
-                      directorFilmCounts[d] = (directorFilmCounts[d] ?? 0) + 1;
-                    }
+                    final movieKey = '${details.id}_${details.title.toLowerCase().trim()}';
+                    directorUniqueMovies.putIfAbsent(d, () => {}).add(movieKey);
                     directorScores[d] =
                         (directorScores[d] ?? 0.0) + finalWeight;
                   }
@@ -315,7 +313,13 @@ class RecommendationEngine {
     }
     final topSubgenres = detectedSubgenres.take(6).toList();
 
-    // CLASSIFICA REGISTI RICORRENTI: ordinata da quello di cui hai visto PIÙ FILM a quello con meno film (minimo 2 film!)
+    // Calcolo conteggio film rigorosamente unici visti per ciascun regista
+    final Map<String, int> directorFilmCounts = {};
+    for (final entry in directorUniqueMovies.entries) {
+      directorFilmCounts[entry.key] = entry.value.length;
+    }
+
+    // CLASSIFICA REGISTI RICORRENTI: ordinata da quello di cui hai visto PIÙ FILM a quello con meno film (rigorosamente MINIMO 2 film distinti!)
     final eligibleDirectors = directorScores.keys
         .where((d) => (directorFilmCounts[d] ?? 0) >= 2)
         .toList()
@@ -323,7 +327,7 @@ class RecommendationEngine {
         final countA = directorFilmCounts[a] ?? 0;
         final countB = directorFilmCounts[b] ?? 0;
         if (countB != countA) {
-          return countB.compareTo(countA); // Ordine decrescente per film visti
+          return countB.compareTo(countA); // Ordine decrescente per film distinti visti
         }
         return (directorScores[b] ?? 0.0).compareTo(directorScores[a] ?? 0.0);
       });
@@ -363,6 +367,7 @@ class RecommendationEngine {
     final dismissedIds = LocalStorageService.getDismissedMovieIds();
     final learnedGenres = LocalStorageService.getLearnedGenreScores();
     final learnedDirectors = LocalStorageService.getLearnedDirectorScores();
+    final recentlyRecommendedIds = LocalStorageService.getRecentlyRecommendedMovieIds().toSet();
 
     final Set<String> excludedTitles = {
       ...userMovies.map((m) => _normalizeTitle(m.title)),
@@ -628,6 +633,14 @@ class RecommendationEngine {
         reasons.add('✦ Disponibile in streaming su $names');
       }
 
+      // Rotazione e freschezza: penalità per film già proposti nell'ultima sessione per evitare che si vedano sempre gli stessi
+      if (recentlyRecommendedIds.contains(full.id)) {
+        score -= 9.0;
+      }
+
+      // Leggero jitter dinamico (+/- 2.0 pt) per diversificare l'ordine tra film ad altissima affinità a ogni riavvio
+      score += (Random().nextDouble() * 4.0 - 2.0);
+
       final finalScore = score.clamp(52.0, 99.0);
 
       scoredList.add(
@@ -669,7 +682,12 @@ class RecommendationEngine {
       if (diverseFeed.length >= maxResults) break;
     }
 
-    return diverseFeed.isNotEmpty ? diverseFeed : scoredList.take(maxResults).toList();
+    final finalResult = diverseFeed.isNotEmpty ? diverseFeed : scoredList.take(maxResults).toList();
+
+    // Salva gli ID raccomandati per ruotarli nelle prossime sessioni
+    LocalStorageService.saveRecentlyRecommendedMovieIds(finalResult.map((m) => m.id).toList());
+
+    return finalResult;
   }
 
   /// Genera raccomandazioni successive per lo scroll infinito con apprendimento real-time e registi

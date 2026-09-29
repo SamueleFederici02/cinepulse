@@ -453,7 +453,9 @@ class LetterboxdService {
       final nameIdx = header.indexOf('name');
       final yearIdx = header.indexOf('year');
       final ratingIdx = header.indexOf('rating');
-      final uriIdx = header.indexOf('letterboxd uri');
+      final uriIdx = header.indexOf('letterboxd uri') != -1
+          ? header.indexOf('letterboxd uri')
+          : header.indexOf('url');
       final dateIdx = header.indexOf('watched date') != -1
           ? header.indexOf('watched date')
           : header.indexOf('date');
@@ -462,6 +464,9 @@ class LetterboxdService {
         debugPrint('Colonna "Name" non trovata nel CSV');
         return [];
       }
+
+      // Se il CSV è un file di liste (es. lists.csv o likes/lists.csv con colonna 'url'/'letterboxd uri' che punta a /list/), ignoralo
+      final bool isListsCsv = header.contains('tags') && !header.contains('rating') && !header.contains('watched date');
 
       final List<LetterboxdMovie> movies = [];
 
@@ -493,12 +498,26 @@ class LetterboxdService {
         String slug = '';
         if (uriIdx != -1 && row.length > uriIdx) {
           final uri = row[uriIdx].trim();
+          // Esclusione categorica di liste personalizzate (es. /list/la-mia-infanzia/)
+          if (uri.contains('/list/') || uri.contains('/lists/')) {
+            continue;
+          }
           final m = RegExp(r'/film/([^/]+)/').firstMatch(uri);
           if (m != null) slug = m.group(1)!;
         }
 
+        // Se è un CSV di metadati lista e non ha un URI /film/, ignoriamo la riga
+        if (isListsCsv && slug.isEmpty) {
+          continue;
+        }
+
         if (slug.isEmpty) {
           slug = title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '-');
+        }
+
+        // Escludi titoli/slug che indicano palesemente una lista e non un film
+        if (slug.startsWith('list-') || slug.contains('/list/')) {
+          continue;
         }
 
         movies.add(
@@ -534,6 +553,11 @@ class LetterboxdService {
       for (final file in archive) {
         if (!file.isFile) continue;
         final name = file.name.toLowerCase();
+        // Ignora esplicitamente i file di liste personalizzate e recensioni
+        if (name.contains('/lists/') || name.endsWith('lists.csv') || name.contains('reviews')) {
+          continue;
+        }
+
         if (name.endsWith('ratings.csv')) {
           ratingsCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
         } else if (name.endsWith('watched.csv')) {
@@ -542,7 +566,8 @@ class LetterboxdService {
           watchlistCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
         } else if (name.endsWith('diary.csv')) {
           diaryCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
-        } else if (name.contains('like') && name.endsWith('.csv')) {
+        } else if (name.endsWith('films.csv') && name.contains('like')) {
+          // Prendi solo likes/films.csv, non likes/lists.csv!
           likesCsv = utf8.decode(file.content as List<int>, allowMalformed: true);
         }
       }

@@ -133,6 +133,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     final cinepulseWatchlist = ref.watch(watchlistProvider);
     final letterboxdMovies = ref.watch(userLetterboxdMoviesProvider);
     final letterboxdWatchlist = letterboxdMovies.where((m) => m.isInWatchlist).toList();
+    final tvSeriesList = ref.watch(tvSeriesProvider);
     final bottomInset = MediaQuery.of(context).padding.bottom + 100;
 
     // Unione e indicizzazione
@@ -145,7 +146,7 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
       if (!seenUnifiedKeys.contains(key) && !seenUnifiedKeys.contains(normTitle)) {
         seenUnifiedKeys.add(key);
         seenUnifiedKeys.add(normTitle);
-        if (m.id != null) seenUnifiedKeys.add('${m.id}');
+        seenUnifiedKeys.add('${m.id}');
         unifiedList.add(
           _WatchlistUnifiedItem(
             id: m.id,
@@ -451,6 +452,8 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
                 children: [
                   _buildFilterPill('Tutti (${unifiedList.length})', 0),
                   const SizedBox(width: 8),
+                  _buildFilterPill('Serie TV (${tvSeriesList.length})', 4),
+                  const SizedBox(width: 8),
                   _buildFilterPill('Da CinePulse (${cinepulseWatchlist.length})', 1),
                   const SizedBox(width: 8),
                   _buildFilterPill('Da Letterboxd (${letterboxdWatchlist.length})', 2),
@@ -542,6 +545,10 @@ class _WatchlistScreenState extends ConsumerState<WatchlistScreen> {
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
+        if (index == 4) {
+          ref.read(navTabProvider.notifier).setTab(1);
+          return;
+        }
         setState(() {
           _activeFilterIndex = index;
         });

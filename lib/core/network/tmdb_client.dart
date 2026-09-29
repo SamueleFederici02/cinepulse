@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../models/tmdb_movie.dart';
+import '../models/tv_series.dart';
 import '../models/watch_provider.dart';
 
 class TmdbClient {
@@ -670,6 +671,187 @@ class TmdbClient {
       debugPrint('Errore getPersonFilmography per $personId: $e');
     }
     return [];
+  }
+
+  // --- RICERCA SERIE TV ---
+  Future<List<TvSeries>> searchTvSeries(String query, {int page = 1}) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+
+    final cacheKey = 'search_tv_${clean.toLowerCase()}_$page';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return (_memoryCache[cacheKey] as List).cast<TvSeries>();
+    }
+
+    try {
+      final response = await _dio.get(
+        '/search/tv',
+        queryParameters: {
+          'query': clean,
+          'page': page,
+          'language': 'it-IT',
+        },
+      );
+
+      final List rawResults = response.data['results'] ?? [];
+      final List<TvSeries> seriesList = [];
+
+      for (final item in rawResults) {
+        final id = item['id'] as int?;
+        final name = (item['name'] ?? item['original_name'] ?? '').toString().trim();
+        if (id == null || name.isEmpty) continue;
+
+        seriesList.add(
+          TvSeries(
+            id: id,
+            name: name,
+            originalName: item['original_name'],
+            overview: item['overview'],
+            posterPath: item['poster_path'],
+            backdropPath: item['backdrop_path'],
+            voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
+            firstAirDate: item['first_air_date'],
+            addedAt: DateTime.now(),
+          ),
+        );
+      }
+
+      // Se in italiano non ha trovato quasi nulla, prova con fallback en-US
+      if (seriesList.isEmpty) {
+        final enResponse = await _dio.get(
+          '/search/tv',
+          queryParameters: {
+            'query': clean,
+            'page': page,
+            'language': 'en-US',
+          },
+        );
+        final List enResults = enResponse.data['results'] ?? [];
+        for (final item in enResults) {
+          final id = item['id'] as int?;
+          final name = (item['name'] ?? item['original_name'] ?? '').toString().trim();
+          if (id == null || name.isEmpty) continue;
+
+          seriesList.add(
+            TvSeries(
+              id: id,
+              name: name,
+              originalName: item['original_name'],
+              overview: item['overview'],
+              posterPath: item['poster_path'],
+              backdropPath: item['backdrop_path'],
+              voteAverage: (item['vote_average'] as num?)?.toDouble() ?? 0.0,
+              firstAirDate: item['first_air_date'],
+              addedAt: DateTime.now(),
+            ),
+          );
+        }
+      }
+
+      _memoryCache[cacheKey] = seriesList;
+      return seriesList;
+    } catch (e) {
+      debugPrint('Errore searchTvSeries per "$clean": $e');
+      return [];
+    }
+  }
+
+  // --- DETTAGLI COMPLETI SERIE TV (STAGIONI, EPISODI, STREAMING) ---
+  Future<TvSeries?> getTvDetails(int tvId, {String countryCode = 'IT'}) async {
+    final cacheKey = 'tv_details_${tvId}_$countryCode';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return _memoryCache[cacheKey] as TvSeries?;
+    }
+
+    try {
+      final response = await _dio.get(
+        '/tv/$tvId',
+        queryParameters: {
+          'language': 'it-IT',
+          'append_to_response': 'watch/providers,credits',
+        },
+      );
+      final data = response.data as Map<String, dynamic>;
+
+      // Watch Providers
+      final List<WatchProvider> provList = [];
+      if (data['watch/providers'] != null &&
+          data['watch/providers']['results'] != null) {
+        final results = data['watch/providers']['results'] as Map<String, dynamic>;
+        final countryData = results[countryCode.toUpperCase()];
+        if (countryData != null) {
+          if (countryData['flatrate'] != null) {
+            for (final p in countryData['flatrate']) {
+              provList.add(WatchProvider.fromJson(p, type: 'flatrate'));
+            }
+          }
+          if (countryData['free'] != null) {
+            for (final p in countryData['free']) {
+              provList.add(WatchProvider.fromJson(p, type: 'free'));
+            }
+          }
+        }
+      }
+
+      // Stagioni (esclusa stagione speciale 0)
+      final List<TvSeasonSummary> seasonList = [];
+      if (data['seasons'] != null) {
+        for (final s in data['seasons']) {
+          final sNum = (s['season_number'] as num?)?.toInt() ?? 0;
+          if (sNum > 0) {
+            seasonList.add(TvSeasonSummary.fromJson(s as Map<String, dynamic>));
+          }
+        }
+      }
+
+      final series = TvSeries(
+        id: data['id'] ?? tvId,
+        name: data['name'] ?? data['original_name'] ?? 'Serie TV',
+        originalName: data['original_name'],
+        overview: data['overview'],
+        posterPath: data['poster_path'],
+        backdropPath: data['backdrop_path'],
+        voteAverage: (data['vote_average'] as num?)?.toDouble() ?? 0.0,
+        firstAirDate: data['first_air_date'],
+        numberOfSeasons: (data['number_of_seasons'] as num?)?.toInt() ?? seasonList.length,
+        numberOfEpisodes: (data['number_of_episodes'] as num?)?.toInt() ?? 0,
+        providers: provList,
+        seasons: seasonList,
+        addedAt: DateTime.now(),
+      );
+
+      _memoryCache[cacheKey] = series;
+      return series;
+    } catch (e) {
+      debugPrint('Errore getTvDetails per ID $tvId: $e');
+      return null;
+    }
+  }
+
+  // --- EPISODI DI UNA STAGIONE SPECIFICA ---
+  Future<List<TvEpisode>> getTvSeason(int tvId, int seasonNumber) async {
+    final cacheKey = 'tv_season_${tvId}_$seasonNumber';
+    if (_memoryCache.containsKey(cacheKey)) {
+      return (_memoryCache[cacheKey] as List).cast<TvEpisode>();
+    }
+
+    try {
+      final response = await _dio.get(
+        '/tv/$tvId/season/$seasonNumber',
+        queryParameters: {'language': 'it-IT'},
+      );
+
+      final episodesRaw = response.data['episodes'] as List? ?? [];
+      final List<TvEpisode> episodes = episodesRaw
+          .map((ep) => TvEpisode.fromJson(ep as Map<String, dynamic>))
+          .toList();
+
+      _memoryCache[cacheKey] = episodes;
+      return episodes;
+    } catch (e) {
+      debugPrint('Errore getTvSeason per $tvId S$seasonNumber: $e');
+      return [];
+    }
   }
 }
 

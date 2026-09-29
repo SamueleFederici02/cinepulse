@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/letterboxd_movie.dart';
 import '../models/taste_profile.dart';
 import '../models/tmdb_movie.dart';
+import '../models/tv_series.dart';
 
 class LocalStorageService {
   static const String _prefsKeyUsername = 'active_letterboxd_username';
@@ -18,6 +19,7 @@ class LocalStorageService {
   static const String _boxPosters = 'movie_posters_box';
   static const String _boxSwipeLearning = 'swipe_learning_box';
   static const String _boxBackups = 'cinepulse_backups_box';
+  static const String _boxTvSeries = 'tv_series_box';
 
   static late Box _moviesBox;
   static late Box _tasteBox;
@@ -26,6 +28,7 @@ class LocalStorageService {
   static late Box _posterBox;
   static late Box _swipeBox;
   static late Box _backupBox;
+  static late Box _tvSeriesBox;
   static late SharedPreferences _prefs;
 
   static Box get backupBox => _backupBox;
@@ -39,7 +42,11 @@ class LocalStorageService {
     _posterBox = await Hive.openBox(_boxPosters);
     _swipeBox = await Hive.openBox(_boxSwipeLearning);
     _backupBox = await Hive.openBox(_boxBackups);
+    _tvSeriesBox = await Hive.openBox(_boxTvSeries);
     _prefs = await SharedPreferences.getInstance();
+
+    // Pulizia automatica immediata di eventuali liste importate erroneamente
+    await cleanInvalidCustomListEntries();
   }
 
   // --- USERNAME ---
@@ -89,17 +96,118 @@ class LocalStorageService {
     await _moviesBox.put(movie.slug, jsonEncode(movie.toJson()));
   }
 
+  static bool _isCustomListSlug(String slug) {
+    final s = slug.toLowerCase();
+    return s.contains('/list/') ||
+        s.contains('/lists/') ||
+        s.startsWith('list-') ||
+        s.contains('-list-') ||
+        s == 'la-mia-infanzia' ||
+        s == 'infanzia';
+  }
+
+  static Future<void> cleanInvalidCustomListEntries() async {
+    try {
+      final keysToRemove = <dynamic>[];
+      for (final key in _moviesBox.keys) {
+        final keyStr = key.toString();
+        if (_isCustomListSlug(keyStr)) {
+          keysToRemove.add(key);
+          continue;
+        }
+        final val = _moviesBox.get(key);
+        if (val is String && val.contains('{')) {
+          try {
+            final map = jsonDecode(val);
+            final slug = (map['slug'] ?? '').toString().toLowerCase();
+            final title = (map['title'] ?? '').toString().toLowerCase();
+            if (_isCustomListSlug(slug) || title == 'la mia infanzia') {
+              keysToRemove.add(key);
+            }
+          } catch (_) {}
+        }
+      }
+      for (final k in keysToRemove) {
+        await _moviesBox.delete(k);
+      }
+    } catch (e) {
+      debugPrint('Errore durante la pulizia liste personalizzate: $e');
+    }
+  }
+
   static List<LetterboxdMovie> getCachedMovies() {
     try {
       final List<LetterboxdMovie> list = [];
       for (final raw in _moviesBox.values) {
         if (raw is String) {
-          list.add(LetterboxdMovie.fromJson(jsonDecode(raw)));
+          final m = LetterboxdMovie.fromJson(jsonDecode(raw));
+          if (!_isCustomListSlug(m.slug) && m.title.toLowerCase() != 'la mia infanzia') {
+            list.add(m);
+          }
         }
       }
       return list;
     } catch (e) {
       debugPrint('Errore nel recupero film da Hive: $e');
+      return [];
+    }
+  }
+
+  // --- RECENTLY RECOMMENDED ROTATION (PER TE FRESCHI E VARI) ---
+  static List<int> getRecentlyRecommendedMovieIds() {
+    try {
+      final raw = _tasteBox.get('recently_recommended_ids');
+      if (raw != null && raw is String) {
+        final List<dynamic> list = jsonDecode(raw);
+        return list.map((e) => (e as num).toInt()).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<void> saveRecentlyRecommendedMovieIds(List<int> ids) async {
+    try {
+      final current = getRecentlyRecommendedMovieIds();
+      final combined = [...ids, ...current].toSet().take(60).toList();
+      await _tasteBox.put('recently_recommended_ids', jsonEncode(combined));
+    } catch (_) {}
+  }
+
+  // --- TV SERIES QUEUE (STILE QUEUE APP) ---
+  static Future<void> saveTvSeries(TvSeries series) async {
+    await _tvSeriesBox.put(series.id.toString(), jsonEncode(series.toJson()));
+  }
+
+  static Future<void> removeTvSeries(int id) async {
+    await _tvSeriesBox.delete(id.toString());
+  }
+
+  static TvSeries? getTvSeries(int id) {
+    try {
+      final raw = _tvSeriesBox.get(id.toString());
+      if (raw != null && raw is String) {
+        return TvSeries.fromJson(jsonDecode(raw));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static List<TvSeries> getTvSeriesList() {
+    try {
+      final List<TvSeries> list = [];
+      for (final raw in _tvSeriesBox.values) {
+        if (raw is String) {
+          list.add(TvSeries.fromJson(jsonDecode(raw)));
+        }
+      }
+      list.sort((a, b) {
+        final dateA = a.lastWatchedAt ?? a.addedAt;
+        final dateB = b.lastWatchedAt ?? b.addedAt;
+        return dateB.compareTo(dateA);
+      });
+      return list;
+    } catch (e) {
+      debugPrint('Errore recupero serie TV da Hive: $e');
       return [];
     }
   }
@@ -307,11 +415,12 @@ class LocalStorageService {
     final dismissedIds = getDismissedMovieIds().toList();
     final learnedGenres = getLearnedGenreScores();
     final learnedDirectors = getLearnedDirectorScores();
+    final tvSeriesList = getTvSeriesList();
     final swipeStats = getSwipeStats();
 
     return {
-      'cinepulse_backup_version': 1,
-      'app_version': '1.0.0',
+      'cinepulse_backup_version': 2,
+      'app_version': '1.0.2',
       'backup_type': backupType,
       'created_at': DateTime.now().toIso8601String(),
       'username': getActiveUsername() ?? 'Cinefilo',
@@ -319,6 +428,7 @@ class LocalStorageService {
       'streaming_providers': getSelectedStreamingProviders(),
       'watched_movies': cachedMovies.map((m) => m.toJson()).toList(),
       'watchlist_movies': watchlistMovies.map((m) => m.toJson()).toList(),
+      'tv_series': tvSeriesList.map((s) => s.toJson()).toList(),
       'taste_profile': tasteProfile?.toJson(),
       'dismissed_movie_ids': dismissedIds,
       'learned_genres': learnedGenres.map((k, v) => MapEntry(k.toString(), v)),
@@ -359,6 +469,14 @@ class LocalStorageService {
         for (final mRaw in (data['watchlist_movies'] as List)) {
           final m = TmdbMovie.fromJson(Map<String, dynamic>.from(mRaw));
           await saveWatchlistMovie(m);
+        }
+      }
+
+      // 4.1 Serie TV
+      if (data['tv_series'] is List) {
+        for (final sRaw in (data['tv_series'] as List)) {
+          final s = TvSeries.fromJson(Map<String, dynamic>.from(sRaw));
+          await saveTvSeries(s);
         }
       }
 

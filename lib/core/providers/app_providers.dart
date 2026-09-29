@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/letterboxd_movie.dart';
 import '../models/taste_profile.dart';
 import '../models/tmdb_movie.dart';
+import '../models/tv_series.dart';
 import '../network/tmdb_client.dart';
 import '../services/letterboxd_service.dart';
 import '../services/recommendation_engine.dart';
@@ -458,3 +459,178 @@ final countryProvidersListProvider = FutureProvider<List<Map<String, String>>>((
   final country = ref.watch(selectedCountryProvider);
   return tmdb.getWatchProvidersForCountry(country);
 });
+
+// --- TRACKING SERIE TV (STILE QUEUE APP) ---
+class TvSeriesNotifier extends Notifier<List<TvSeries>> {
+  @override
+  List<TvSeries> build() {
+    return LocalStorageService.getTvSeriesList();
+  }
+
+  Future<void> addSeries(TvSeries series) async {
+    final tmdb = ref.read(tmdbClientProvider);
+    final country = ref.read(selectedCountryProvider);
+
+    TvSeries fullSeries = series;
+    try {
+      final details = await tmdb.getTvDetails(series.id, countryCode: country);
+      if (details != null) {
+        fullSeries = details.copyWith(
+          currentSeason: 1,
+          currentEpisode: 1,
+          status: 'queued',
+        );
+      }
+    } catch (_) {}
+
+    try {
+      final s1Episodes = await tmdb.getTvSeason(series.id, 1);
+      if (s1Episodes.isNotEmpty) {
+        final ep1 = s1Episodes.firstWhere(
+          (e) => e.episodeNumber == 1,
+          orElse: () => s1Episodes.first,
+        );
+        fullSeries = fullSeries.copyWith(
+          currentEpisodeTitle: ep1.name,
+        );
+      }
+    } catch (_) {}
+
+    await LocalStorageService.saveTvSeries(fullSeries);
+    final current = state.where((s) => s.id != fullSeries.id).toList();
+    state = [fullSeries, ...current];
+  }
+
+  Future<void> removeSeries(int id) async {
+    await LocalStorageService.removeTvSeries(id);
+    state = state.where((s) => s.id != id).toList();
+  }
+
+  Future<void> markNextEpisodeWatched(int seriesId) async {
+    final index = state.indexWhere((s) => s.id == seriesId);
+    if (index == -1) return;
+
+    final series = state[index];
+    final tmdb = ref.read(tmdbClientProvider);
+    final newWatched = Set<String>.from(series.watchedEpisodeKeys);
+    final curKey = 's${series.currentSeason}e${series.currentEpisode}';
+    newWatched.add(curKey);
+
+    int currentSeasonCount = 10;
+    final seasonInfo = series.seasons.firstWhere(
+      (s) => s.seasonNumber == series.currentSeason,
+      orElse: () => TvSeasonSummary(
+        id: 0,
+        seasonNumber: series.currentSeason,
+        name: 'Stagione ${series.currentSeason}',
+        episodeCount: 10,
+      ),
+    );
+    if (seasonInfo.episodeCount > 0) {
+      currentSeasonCount = seasonInfo.episodeCount;
+    }
+
+    int nextSeason = series.currentSeason;
+    int nextEpisode = series.currentEpisode + 1;
+    String newStatus = series.status;
+
+    if (nextEpisode > currentSeasonCount) {
+      if (series.currentSeason < series.numberOfSeasons) {
+        nextSeason = series.currentSeason + 1;
+        nextEpisode = 1;
+      } else {
+        newStatus = 'completed';
+      }
+    }
+
+    String? nextEpTitle;
+    if (newStatus != 'completed') {
+      try {
+        final eps = await tmdb.getTvSeason(series.id, nextSeason);
+        final nextEp = eps.firstWhere(
+          (e) => e.episodeNumber == nextEpisode,
+          orElse: () => eps.first,
+        );
+        nextEpTitle = nextEp.name;
+      } catch (_) {}
+    }
+
+    final updated = series.copyWith(
+      watchedEpisodeKeys: newWatched,
+      currentSeason: nextSeason,
+      currentEpisode: nextEpisode,
+      currentEpisodeTitle: nextEpTitle,
+      status: newStatus,
+      lastWatchedAt: DateTime.now(),
+    );
+
+    await LocalStorageService.saveTvSeries(updated);
+    final updatedList = List<TvSeries>.from(state);
+    updatedList[index] = updated;
+    state = updatedList;
+  }
+
+  Future<void> toggleEpisode(int seriesId, int season, int episode) async {
+    final index = state.indexWhere((s) => s.id == seriesId);
+    if (index == -1) return;
+
+    final series = state[index];
+    final newWatched = Set<String>.from(series.watchedEpisodeKeys);
+    final key = 's${season}e$episode';
+    if (newWatched.contains(key)) {
+      newWatched.remove(key);
+    } else {
+      newWatched.add(key);
+    }
+
+    final updated = series.copyWith(
+      watchedEpisodeKeys: newWatched,
+      lastWatchedAt: DateTime.now(),
+    );
+
+    await LocalStorageService.saveTvSeries(updated);
+    final updatedList = List<TvSeries>.from(state);
+    updatedList[index] = updated;
+    state = updatedList;
+  }
+
+  Future<void> markSeasonWatched(int seriesId, int season, int episodeCount) async {
+    final index = state.indexWhere((s) => s.id == seriesId);
+    if (index == -1) return;
+
+    final series = state[index];
+    final newWatched = Set<String>.from(series.watchedEpisodeKeys);
+    for (int i = 1; i <= episodeCount; i++) {
+      newWatched.add('s${season}e$i');
+    }
+
+    final updated = series.copyWith(
+      watchedEpisodeKeys: newWatched,
+      lastWatchedAt: DateTime.now(),
+    );
+
+    await LocalStorageService.saveTvSeries(updated);
+    final updatedList = List<TvSeries>.from(state);
+    updatedList[index] = updated;
+    state = updatedList;
+  }
+
+  Future<void> setSeriesStatus(int seriesId, String status) async {
+    final index = state.indexWhere((s) => s.id == seriesId);
+    if (index == -1) return;
+
+    final updated = state[index].copyWith(status: status);
+    await LocalStorageService.saveTvSeries(updated);
+    final updatedList = List<TvSeries>.from(state);
+    updatedList[index] = updated;
+    state = updatedList;
+  }
+
+  void refresh() {
+    state = LocalStorageService.getTvSeriesList();
+  }
+}
+
+final tvSeriesProvider = NotifierProvider<TvSeriesNotifier, List<TvSeries>>(
+  () => TvSeriesNotifier(),
+);

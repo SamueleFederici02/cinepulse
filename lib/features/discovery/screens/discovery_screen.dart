@@ -169,7 +169,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                     GestureDetector(
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        ref.read(navTabProvider.notifier).setTab(3);
+                        ref.read(navTabProvider.notifier).setTab(4);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -227,7 +227,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                       ),
                       onPressed: () {
                         HapticFeedback.lightImpact();
-                        ref.read(navTabProvider.notifier).setTab(3);
+                        ref.read(navTabProvider.notifier).setTab(4);
                       },
                     ),
                   ],
@@ -238,7 +238,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 GestureDetector(
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    ref.read(navTabProvider.notifier).setTab(3);
+                    ref.read(navTabProvider.notifier).setTab(4);
                   },
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

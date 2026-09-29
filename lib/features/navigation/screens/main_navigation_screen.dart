@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../catalog/screens/catalog_screen.dart';
 import '../../discovery/screens/discovery_screen.dart';
 import '../../taste_profile/screens/taste_profile_screen.dart';
+import '../../tv_series/screens/tv_series_screen.dart';
 import '../../watchlist/screens/watchlist_screen.dart';
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
@@ -19,6 +20,7 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   final List<Widget> _screens = const [
     DiscoveryScreen(),
+    TvSeriesScreen(),
     CatalogScreen(),
     WatchlistScreen(),
     TasteProfileScreen(),
@@ -118,22 +120,28 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
                         onTap: () => _onTabSelected(0),
                       ),
                       _NavBarItem(
-                        icon: Icons.movie_filter_rounded,
-                        label: 'Liste',
+                        icon: Icons.live_tv_rounded,
+                        label: 'Serie',
                         isSelected: currentTab == 1,
                         onTap: () => _onTabSelected(1),
                       ),
                       _NavBarItem(
-                        icon: Icons.bookmark_added_rounded,
-                        label: 'Watchlist',
+                        icon: Icons.movie_filter_rounded,
+                        label: 'Liste',
                         isSelected: currentTab == 2,
                         onTap: () => _onTabSelected(2),
                       ),
                       _NavBarItem(
-                        icon: Icons.person_rounded,
-                        label: 'Profilo',
+                        icon: Icons.bookmark_added_rounded,
+                        label: 'Watchlist',
                         isSelected: currentTab == 3,
                         onTap: () => _onTabSelected(3),
+                      ),
+                      _NavBarItem(
+                        icon: Icons.person_rounded,
+                        label: 'Profilo',
+                        isSelected: currentTab == 4,
+                        onTap: () => _onTabSelected(4),
                       ),
                     ],
                   ),
@@ -174,7 +182,7 @@ class _NavBarItem extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.primaryOrange.withOpacity(0.16)
